@@ -37,12 +37,13 @@ flowchart TD
     end
 
     AF -->|1. check_source| PG
-    AF -->|2. spark-submit bronze| SPARK
-    AF -->|3. spark-submit silver| SPARK
-    AF -->|4. spark-submit gold| SPARK
-    AF -->|5. spark-submit publish| SPARK
+    AF -->|2. prepare_raw_source| PG
+    AF -->|3. spark-submit bronze| SPARK
+    AF -->|4. spark-submit silver| SPARK
+    AF -->|5. spark-submit gold| SPARK
+    AF -->|6. spark-submit publish| SPARK
 
-    PG -.->|JDBC Read| BRONZE
+    PG -.->|JDBC Read raw.*| BRONZE
     BRONZE --> SILVER
     SILVER --> GOLD
     GOLD -.->|mongo-spark-connector| MONGO
@@ -52,12 +53,13 @@ flowchart TD
 ### Data Pipeline Overview
 
 1. **Source & Simulation**: Postgres database `demo` with schema `archive` (full dump) and schema `bookings` (simulated state up to a specified cutoff timestamp).
-2. **Orchestration**: Airflow standalone orchestrates the medallion pipeline DAG `airlines_medallion` (`check_source` → `bronze` → `silver` → `gold` → `publish`).
-3. **Bronze Layer**: Appends newly released data partitioned by ingest day into Iceberg tables (`lake.bronze.*`), tracking ingestion watermarks in `lake.meta.watermarks`.
-4. **Silver Layer**: Cleans, deduplicates with PK merge, enriches flight durations/delays/routes, and quarantines invalid records into `lake.silver.quarantine`.
-5. **Gold Layer**: Computes analytical marts with official domain metrics (revenue, Pareto share, flight occupancy, fleet utilization, route delays, delay heatmaps).
-6. **Publish Layer**: Exports Gold marts to MongoDB collections with upsert and run-tracking metadata (`pipeline_runs`).
-7. **Dashboard**: FastAPI service serving interactive dashboards (Leaflet route map, delay heatmaps, revenue charts) and JSON REST endpoints.
+2. **Orchestration**: Airflow standalone orchestrates the medallion pipeline DAG `airlines_medallion` (`check_source` → `prepare_raw_source` → `bronze` → `silver` → `gold` → `publish`).
+3. **Raw Source**: `prepare_raw_source` rebuilds 3 denormalized raw tables in Postgres schema `raw` from the simulated `bookings` state using [`pipeline/sql/bronze/airline_data_source.sql`](pipeline/sql/bronze/airline_data_source.sql): `flight_seat_reservations` (one row per seat per flight + unseated bookings), `airport_sites`, `aircraft_seat_layouts`.
+4. **Bronze Layer**: Appends a full snapshot of the 3 raw tables per run into Iceberg (`lake.bronze.*`), partitioned by ingest day and batch, recording the loaded cutoff in `lake.meta.watermarks`.
+5. **Silver Layer**: Splits the 3 raw tables back into the 8 normalized entities (airports, aircrafts, seats, bookings, tickets, flights_enriched, ticket_flights, boarding_passes) with distinct-per-key extraction, PK merge, enrichment of flight durations/delays/routes, and quarantine of conflicting or invalid records into `lake.silver.quarantine`.
+6. **Gold Layer**: Computes analytical marts with official domain metrics (revenue, Pareto share, flight occupancy, fleet utilization, route delays, delay heatmaps).
+7. **Publish Layer**: Exports Gold marts to MongoDB collections with upsert and run-tracking metadata (`pipeline_runs`).
+8. **Dashboard**: FastAPI service serving interactive dashboards (Leaflet route map, delay heatmaps, revenue charts) and JSON REST endpoints.
 
 ---
 
@@ -110,7 +112,7 @@ Populates `bookings` tables up to `2017-06-15`, printing table row counts and fl
   ```bash
   docker compose -f airflow/docker-compose.dev.yaml exec airflow airflow dags trigger airlines_medallion
   ```
-The DAG executes sequentially: `check_source` → `bronze` → `silver` → `gold` → `publish`.
+The DAG executes sequentially: `check_source` → `prepare_raw_source` → `bronze` → `silver` → `gold` → `publish`.
 
 ### 5. View metrics on the dashboard
 Open [http://localhost:8000](http://localhost:8000) to view:
@@ -154,10 +156,10 @@ Verify the following acceptance benchmarks locally after running the pipeline th
   - Boeing 777-300 load factor ≈ **72.8%**.
   - Cessna 208 Caravan load factor ≈ **16.0%**.
 - **Route Revenue & Pareto Distribution**:
-  - Total revenue ≈ **37.7B RUB** across **451** revenue routes.
-  - Top **38** routes account for **50%** of total revenue.
+  - Total revenue ≈ **47.0B RUB** across **457** revenue routes.
+  - Top **39** routes account for **50%** of total revenue.
 - **Delay Hotspots**:
-  - Voronezh (VOZ) → Pulkovo (LED): **11.1%** delay rate over 90 scheduled flights.
+  - Voronezh (VOZ) → Pulkovo (LED): **11.1%** delay rate over 90 arrived flights.
 
 ### System Requirements & Notes
 - **Host Ports Free**: Ensure host ports `8000` (FastAPI), `8080` (Spark UI), `8081` (Mongo Express), `8082` (Adminer), `8083` (Airflow), and `9870` (NameNode UI) are not bound by host processes before launching.

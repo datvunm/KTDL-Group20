@@ -5,13 +5,16 @@ Batch Medallion data pipeline built with Apache Spark 3.5, Apache Iceberg, and M
 ## Architecture
 
 ```
-PostgreSQL (demo DB)
+PostgreSQL (demo DB, schema bookings = simulated state)
        │
-       ▼  (JDBC read, cast complex types, partitioned)
-  [ Bronze ]  lake.bronze.* (append-only Iceberg, partitioned by days(_ingest_ts))
+       ▼  (Airflow prepare_raw_source: sql/bronze/airline_data_source.sql)
+  [  Raw   ]  raw.flight_seat_reservations, raw.airport_sites, raw.aircraft_seat_layouts
        │
-       ▼  (Deduplication, quarantine checks, enrichment, MERGE INTO)
-  [ Silver ]  lake.silver.* (Iceberg dimension & fact tables)
+       ▼  (JDBC full snapshot, cast complex types, partitioned read)
+  [ Bronze ]  lake.bronze.* (3 append-only Iceberg tables, partitioned by days(_ingest_ts), _batch_id)
+       │
+       ▼  (Split raw rows into entities, conflict/quality quarantine, enrichment, MERGE INTO)
+  [ Silver ]  lake.silver.* (8 Iceberg dimension & fact tables + quarantine)
        │
        ▼  (Aggregation, analytics metrics, Gonor.me / Postgres docs formulas)
   [  Gold  ]  lake.gold.* (Marts & dims) + snapshot expiration
@@ -25,12 +28,13 @@ PostgreSQL (demo DB)
 ```
 pipeline/
 ├── common.py                # SparkSession init, JDBC helpers, SQL runner, CLI parser
-├── bronze.py                # Bronze ingestion from PG to Iceberg
+├── bronze.py                # Bronze ingestion of the 3 raw tables from PG to Iceberg
 ├── silver.py                # Silver transforms with quarantine routing & MERGE
 ├── gold.py                  # Gold marts aggregation & snapshot expiration
 ├── publish.py               # Gold publishing to Mongo & driver metadata/indexes
 ├── sql/
-│   ├── silver/              # Numbered Silver DDL & MERGE scripts (00 to 08)
+│   ├── bronze/              # airline_data_source.sql: raw source DDL + validation (run by Airflow)
+│   ├── silver/              # Numbered Silver DDL & MERGE scripts (00 to 08), raw -> entities
 │   └── gold/                # Gold mart CREATE OR REPLACE TABLE AS SELECT scripts
 ├── tests/
 │   ├── __init__.py

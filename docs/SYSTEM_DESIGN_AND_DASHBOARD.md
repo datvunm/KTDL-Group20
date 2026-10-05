@@ -71,14 +71,15 @@ flowchart TD
     end
 
     AF -->|1. check_source| PG
-    AF -->|2. spark-submit bronze.py| SM
-    AF -->|3. spark-submit silver.py| SM
-    AF -->|4. spark-submit gold.py| SM
-    AF -->|5. spark-submit publish.py| SM
+    AF -->|2. prepare_raw_source: build raw.*| PG
+    AF -->|3. spark-submit bronze.py| SM
+    AF -->|4. spark-submit silver.py| SM
+    AF -->|5. spark-submit gold.py| SM
+    AF -->|6. spark-submit publish.py| SM
 
-    SM -.->|JDBC Read with type casts| PG
-    SM -->|Append partitioned batches| ICE
-    SM -->|Deduplicate, enrich & quarantine| ICE
+    SM -.->|JDBC Read raw.* with type casts| PG
+    SM -->|Append 3 raw snapshot tables| ICE
+    SM -->|Split raw into entities, enrich & quarantine| ICE
     SM -->|Compute marts & dims| ICE
     SM -.->|mongo-spark-connector upsert| MG
     MG -->|Document queries & aggregations| API
@@ -157,16 +158,19 @@ The lifecycle of data through the Airlines Lakehouse spans five distinct chronol
        ▼ (1. check_source: PythonOperator)            │
 [Airflow DAG: airlines_medallion]                    │
        │                                             │
-       ▼ (2. spark-submit bronze.py)                  │
-[HDFS: lake.bronze.* (Partitioned Iceberg)] ◄────────┘ (Incremental window via lake.meta.watermarks)
+       ▼ (2. prepare_raw_source: PythonOperator)       │
+[PostgreSQL: raw schema (3 denormalized tables)] ◄───┘ (airline_data_source.sql)
        │
-       ▼ (3. spark-submit silver.py)
-[HDFS: lake.silver.* (MERGE INTO)] ──► [HDFS: lake.silver.quarantine] (Malformed rows)
+       ▼ (3. spark-submit bronze.py)
+[HDFS: lake.bronze.* (3 raw snapshot Iceberg tables)]
        │
-       ▼ (4. spark-submit gold.py)
+       ▼ (4. spark-submit silver.py)
+[HDFS: lake.silver.* (MERGE INTO)] ──► [HDFS: lake.silver.quarantine] (Conflicting / malformed rows)
+       │
+       ▼ (5. spark-submit gold.py)
 [HDFS: lake.gold.* (Analytical Marts & Dims)] ──► [Iceberg snapshot expiration]
        │
-       ▼ (5. spark-submit publish.py)
+       ▼ (6. spark-submit publish.py)
 [MongoDB: airlines database (replace upsert & index builds)]
        │
        ▼
@@ -198,22 +202,24 @@ The DAG `airlines_medallion` is triggered on-demand without an automatic cron sc
    - Connects directly to PostgreSQL `demo` database via `psycopg2`.
    - Executes `SELECT bookings.now() AS cutoff, count(*) AS cnt FROM bookings.bookings;`.
    - Validates that the operational database is reachable, non-empty, and returns the active cutoff timestamp string (e.g. `'2017-08-15 18:00:00+00'`), passing it down the pipeline via Airflow XCom.
-2. **`bronze` (`SparkSubmitOperator`)**:
-   - Submits `/opt/pipeline/bronze.py` with parameter `--run-id {{ ts_nodash }}` to Spark master `spark://spark:7077`.
-   - Connects to PostgreSQL via JDBC, pulls raw records, and appends them into Iceberg bronze tables.
-3. **`silver` (`SparkSubmitOperator`)**:
+2. **`prepare_raw_source` (`PythonOperator`)**:
+   - Executes `/opt/pipeline/sql/bronze/airline_data_source.sql` via `psycopg2` to rebuild `raw.flight_seat_reservations`, `raw.airport_sites` and `raw.aircraft_seat_layouts` from the simulated `bookings` schema, and asserts the script's validation queries.
+3. **`bronze` (`SparkSubmitOperator`)**:
+   - Submits `/opt/pipeline/bronze.py` with parameter `--run-id <sanitized run_id>` to Spark master `spark://spark:7077`.
+   - Reads the 3 raw tables via JDBC and appends full snapshots into Iceberg bronze tables.
+4. **`silver` (`SparkSubmitOperator`)**:
    - Submits `/opt/pipeline/silver.py`.
-   - Reads newly appended Bronze records (`WHERE _batch_id = '${run_id}'`), performs deduplication, executes business validation, reroutes invalid records into `lake.silver.quarantine`, and merges clean records into curated Silver Iceberg tables.
-4. **`gold` (`SparkSubmitOperator`)**:
+   - Reads the current Bronze batch (`WHERE _batch_id = '${run_id}'`), splits the raw rows back into the 8 entities, executes conflict and business validation, reroutes invalid records into `lake.silver.quarantine`, and merges clean records into curated Silver Iceberg tables.
+5. **`gold` (`SparkSubmitOperator`)**:
    - Submits `/opt/pipeline/gold.py`.
    - Aggregates Silver fact and dimension tables into analytical marts and dimension tables.
    - Executes Iceberg snapshot expiration (`CALL lake.system.expire_snapshots(...)`) to maintain clean storage bounds.
-5. **`publish` (`SparkSubmitOperator`)**:
+6. **`publish` (`SparkSubmitOperator`)**:
    - Submits `/opt/pipeline/publish.py`.
    - Synchronizes Gold marts into MongoDB collections using the Mongo-Spark Connector (`replace` upsert strategy).
    - Computes lineage and row-count metrics across all layers, recording a structured document in `pipeline_runs`.
    - PyMongo driver establishes auxiliary compound indexes on MongoDB collections.
-6. **Failure Callback (`on_failure_callback`)**:
+7. **Failure Callback (`on_failure_callback`)**:
    - If any operator fails, the DAG-level callback instantiates a PyMongo connection to record a `pipeline_runs` document with `status: "failed"` and timestamps, ensuring dashboard observability even during outages.
 
 ### Serving Layer & FastAPI Ingestion
@@ -271,43 +277,34 @@ The simulator (`source/simulate.sql`, orchestrated via `source/simulate.sh <cuto
 
 ---
 
+### Raw Source Tables (`prepare_raw_source`)
+
+Before ingestion, the Airflow task `prepare_raw_source` rebuilds three deliberately denormalized raw tables in PostgreSQL schema `raw`, executing [`pipeline/sql/bronze/airline_data_source.sql`](../pipeline/sql/bronze/airline_data_source.sql) with `search_path = raw, bookings` so they reflect the current simulated state:
+
+| Raw table | Grain | Source tables folded in |
+|---|---|---|
+| `raw.flight_seat_reservations` | One row per physical seat per flight (ticket columns NULL when empty), plus one row per booked segment without a boarding pass (seat columns NULL) | `flights`, derived route timetable (`days_of_week`, `duration`), `boarding_passes`, `ticket_flights`, `tickets`, `bookings` |
+| `raw.airport_sites` | One row per airport | `airports_data` |
+| `raw.aircraft_seat_layouts` | One row per seat per aircraft model | `aircrafts_data`, `seats` |
+
+The task commits everything in one transaction and fails the DAG unless the script's validation queries pass: booked rows = `ticket_flights` rows, lossless reference copies, and zero unresolved airport/seat keys. The heavier row-by-row recovery test runs only with `RAW_RECOVERY_CHECK=1`. At the final cutoff `flight_seat_reservations` holds **5,513,920** rows (2,360,335 booked + 3,153,585 empty seats).
+
 ### Bronze Ingestion & Watermarking
 
-The Bronze layer (`pipeline/bronze.py`) captures raw data from PostgreSQL into append-only Apache Iceberg tables in namespace `lake.bronze.*`.
+The Bronze layer (`pipeline/bronze.py`) copies the three raw tables as-is from PostgreSQL into append-only Apache Iceberg tables: `lake.bronze.flight_seat_reservations`, `lake.bronze.airport_sites`, `lake.bronze.aircraft_seat_layouts`.
 
 1. **Handling Complex PostgreSQL Types via JDBC**:
-   - PostgreSQL `jsonb` fields (`model`, `airport_name`, `city`, `contact_data`) and geometric `point` types (`coordinates`) cannot be mapped directly into primitive Spark types by default JDBC dialect drivers.
-   - The extraction queries explicitly cast these columns to `::text` at the source query level:
-     ```sql
-     SELECT aircraft_code, model::text AS model, range FROM bookings.aircrafts_data
-     SELECT airport_code, airport_name::text AS airport_name, city::text AS city, coordinates::text AS coordinates, timezone FROM bookings.airports_data
-     ```
+   - `jsonb` (`model`, `airport_name`, `city`, `contact_data`), `point` (`coordinates`), `integer[]` (`days_of_week`) and `interval` (`duration`) columns are cast to `::text` in the extraction query, keeping the raw values unparsed.
 2. **Metadata Columns**:
-   - Every ingested batch injects three audit columns:
-     - `_ingest_ts` (`timestamp`): UTC timestamp when Spark processed the batch.
-     - `_batch_id` (`string`): The Airflow run identifier (e.g. `20261004_120000`).
-     - `_source_now` (`timestamp`): The exact simulation cutoff returned by `bookings.now()`.
+   - `_ingest_ts` (`timestamp`): UTC timestamp when Spark processed the batch.
+   - `_batch_id` (`string`): The Airflow run identifier.
+   - `_source_now` (`timestamp`): The simulation cutoff returned by `bookings.now()`.
 3. **Partitioning Strategy**:
-   - Bronze tables are partitioned using Iceberg's native partition transform: `partitionedBy(F.days(F.col("_ingest_ts")))`.
-4. **Full Snapshots vs. Incremental Ingestion**:
-   - **Dimensions** (`aircrafts_data`, `airports_data`, `seats`): Ingested in full every run.
-   - **Flights** (`flights`): Full snapshot read each run because flight statuses dynamically transition (e.g., Scheduled $\rightarrow$ Delayed $\rightarrow$ Departed $\rightarrow$ Arrived) across simulation cutoffs. Spark parallelizes this JDBC extraction using a 4-way partitioned query bounded by `min(flight_id)` and `max(flight_id)`.
-   - **Bookings, Tickets, Ticket Flights**: Incrementally ingested via watermarks.
-   - **Boarding Passes**: Ingested incrementally using their own release watermark based on:
-     ```sql
-     greatest(f.scheduled_departure - interval '24 hours', b.book_date)
-     ```
+   - `partitionedBy(days(_ingest_ts), _batch_id)`; the identity `_batch_id` partition lets Silver prune to the current batch.
+4. **Full Snapshots**:
+   - Every run takes a full snapshot of the three tables. The raw grain has no change-tracking column, and seat occupancy and flight statuses change between cutoffs. `flight_seat_reservations` is read with an 8-way JDBC partitioned query on `flight_id` (indexed by `prepare_raw_source`).
 5. **Watermark Management (`lake.meta.watermarks`)**:
-   - High watermarks are maintained in an Iceberg table:
-     ```sql
-     CREATE TABLE IF NOT EXISTS lake.meta.watermarks (
-         table_name string,
-         watermark timestamp,
-         run_id string,
-         updated_at timestamp
-     ) USING iceberg;
-     ```
-   - Watermarks are updated via atomic `MERGE INTO` only after all 8 table extractions in the batch complete successfully. This guarantees at-least-once ingestion consistency.
+   - After all three loads succeed, the loaded cutoff is recorded per table via Iceberg `MERGE INTO`.
 
 ---
 
@@ -315,8 +312,22 @@ The Bronze layer (`pipeline/bronze.py`) captures raw data from PostgreSQL into a
 
 The Silver layer (`pipeline/silver.py` executing SQL scripts `00` through `08`) standardizes types, deduplicates records, validates business constraints, routes corrupt data to quarantine, anonymizes PII, and enriches records with geospatial and temporal dimensions.
 
-1. **Quarantine Routing & Data Quality Checks (`00_quarantine.sql`)**:
-   - Invalid records are intercepted before entering curated Silver tables and recorded in `lake.silver.quarantine`:
+1. **Raw → Entity Extraction**:
+   - Each script builds a temporary view of the current batch with `SELECT DISTINCT <entity columns>` over the relevant raw table, collapsing the repetition the denormalized grain creates (a booking repeats on every seat/segment row of its tickets; a flight repeats on every seat row):
+
+     | Silver table | Raw source and filter |
+     |---|---|
+     | `airports` | `airport_sites` |
+     | `aircrafts` | `aircraft_seat_layouts` (distinct code, model, range) |
+     | `seats` | `aircraft_seat_layouts WHERE seat_no IS NOT NULL` |
+     | `bookings` | `flight_seat_reservations WHERE book_ref IS NOT NULL` |
+     | `tickets` | `flight_seat_reservations WHERE ticket_no IS NOT NULL` |
+     | `flights_enriched` | `flight_seat_reservations` (every row carries its flight) |
+     | `ticket_flights` | `flight_seat_reservations WHERE ticket_no IS NOT NULL` |
+     | `boarding_passes` | `flight_seat_reservations WHERE ticket_no IS NOT NULL AND seat_no IS NOT NULL` |
+
+2. **Quarantine Routing & Data Quality Checks**:
+   - Each view tags rows with a `reject_reason`; tagged rows are written to `lake.silver.quarantine` (`00_quarantine.sql` creates it and clears the current batch for idempotent reruns), and only untagged rows are merged:
      ```sql
      CREATE TABLE IF NOT EXISTS lake.silver.quarantine (
          source_table string,
@@ -326,35 +337,28 @@ The Silver layer (`pipeline/silver.py` executing SQL scripts `00` through `08`) 
          _ingest_ts timestamp
      ) USING iceberg;
      ```
-   - **Flights Quality Validation (`06_flights_enriched.sql`)**:
-     - Quarantines records where `actual_arrival <= actual_departure` (impossible temporal duration).
-     - Quarantines records with unexpected status values not in `('On Time', 'Delayed', 'Departed', 'Arrived', 'Scheduled', 'Cancelled')`.
-   - **Ticket Flights Quality Validation (`07_ticket_flights.sql`)**:
-     - Quarantines rows where `amount < 0`.
-     - Quarantines orphaned records where `flight_id` is missing in `lake.silver.flights_enriched` or `ticket_no` is missing in `lake.silver.tickets`.
-   - **Boarding Passes Quality Validation (`08_boarding_passes.sql`)**:
-     - Quarantines boarding passes assigned to seat numbers that do not physically exist on the aircraft assigned to that flight (`seat_no NOT IN seats`).
-2. **Primary-Key Deduplication & Iceberg `MERGE INTO`**:
-   - Because Bronze is append-only across runs, Silver uses window functions to isolate the latest record per primary key within the current batch:
-     ```sql
-     row_number() OVER (PARTITION BY <pk> ORDER BY _ingest_ts DESC) AS rn
-     ```
-   - Iceberg's ACID `MERGE INTO` reconciles updates and inserts idempotently:
+   - **Conflicting attributes** (all entities): a key with more than one distinct attribute set in the batch (e.g. one `book_ref` with two `book_date`s), detected with `count(*) OVER (PARTITION BY <key>) > 1`. Every version is quarantined.
+   - **Flights**: `actual_arrival <= actual_departure`, status outside the six valid values, or airport/aircraft codes missing from Silver dimensions.
+   - **Ticket flights**: `amount < 0`, invalid fare class, or `flight_id` / `ticket_no` not in Silver.
+   - **Boarding passes**: missing `boarding_no`, or seat not physically on the flight's aircraft.
+   - Reference tables: missing keys, invalid seat fare class, conflicting attributes.
+3. **Primary-Key Iceberg `MERGE INTO`**:
+   - Iceberg's ACID `MERGE INTO` reconciles updates (e.g. a flight moving from Scheduled to Arrived between cutoffs) and inserts idempotently:
      ```sql
      MERGE INTO lake.silver.airports AS target
-     USING (SELECT ... WHERE rn = 1) AS source
+     USING (SELECT ... FROM airports_batch WHERE reject_reason IS NULL) AS source
      ON target.airport_code = source.airport_code
      WHEN MATCHED THEN UPDATE SET *
      WHEN NOT MATCHED THEN INSERT *;
      ```
-3. **PII Anonymization (SHA-256 Hashing)**:
+4. **PII Anonymization (SHA-256 Hashing)**:
    - In compliance with data privacy regulations (GDPR / ISO 27701), passenger identity numbers (`passenger_id`) are never propagated to Silver in plain text.
    - The field is hashed using SHA-256 (`05_tickets.sql`):
      ```sql
      sha2(passenger_id, 256) AS passenger_key
      ```
-   - Plaintext passenger names and contact phone/email JSON are excluded from curated silver tables.
-4. **Geospatial & Temporal Enrichment (`06_flights_enriched.sql`)**:
+   - Plaintext passenger names and contact phone/email JSON stay in Bronze and are excluded from curated silver tables; quarantine payloads also hash `passenger_id`.
+5. **Geospatial & Temporal Enrichment (`06_flights_enriched.sql`)**:
    - **Haversine Distance**: Computes great-circle flight distance in kilometers between origin and destination coordinates:
      $$d = 2 \cdot R \cdot \arcsin\left(\sqrt{\sin^2\left(\frac{\Delta \text{lat}}{2}\right) + \cos(\text{lat}_1)\cos(\text{lat}_2)\sin^2\left(\frac{\Delta \text{lon}}{2}\right)}\right)$$
      with Earth radius $R = 6371\text{ km}$, executed natively in Spark SQL:
@@ -445,9 +449,9 @@ The publishing phase (`pipeline/publish.py`) transitions analytical tables from 
        "finished_at": "2026-10-04T12:04:12.789012+00:00",
        "status": "success",
        "counts": {
-         "bronze": { "flights": 65664, "bookings": 593433, ... },
+         "bronze": { "flight_seat_reservations": 5513920, "airport_sites": 104, "aircraft_seat_layouts": 1339 },
          "silver": { "flights_enriched": 65664, ... },
-         "gold": { "gold_route_revenue": 451, ... }
+         "gold": { "gold_route_revenue": 3448, ... }
        },
        "quarantine": 0
      }
@@ -477,7 +481,7 @@ The dashboard is accessible at `http://localhost:8000` and contains six speciali
 The Overview tab provides a high-level executive snapshot of the entire airline operation:
 
 - **Executive KPI Cards**:
-  1. **Total Revenue (`37.7B ₽`)**:
+  1. **Total Revenue (`47.0B ₽`)**:
      - *Meaning*: Aggregate gross revenue booked across all completed and scheduled flights in the active dataset.
      - *Source*: Aggregated sum of `revenue` from `gold_route_pareto` (or `gold_route_revenue`).
   2. **Total Flights (`49,235`)**:
@@ -486,10 +490,10 @@ The Overview tab provides a high-level executive snapshot of the entire airline 
   3. **Delayed Flights (`2,394 (4.9%)`)**:
      - *Meaning*: Total flights with departure delay $> 15$ minutes and the corresponding system-wide delay percentage ($2394 / 49235 \approx 4.86\%$).
      - *Source*: Sum of `delayed` from `gold_delay_by_aircraft`.
-  4. **Average Load Factor (`58.3%` / `0.5828`)**:
+  4. **Average Load Factor (`42.8%` / `0.4285`)**:
      - *Meaning*: System-wide seat occupancy rate across all operated flights.
      - *Source*: Unweighted average of `avg_load_factor` across active fleet models from `gold_fleet`.
-  5. **Active Fleet (`8 models`)**:
+  5. **Active Fleet (`9 models`)**:
      - *Meaning*: Number of distinct commercial aircraft models actively deployed across the network.
      - *Source*: Count of documents in `gold_fleet`.
   6. **Airports Network (`104 airports`)**:
@@ -539,7 +543,7 @@ The Delays tab allows operations directors to pinpoint scheduling congestion and
    - Lists directional city pairs ranked by highest departure delay percentage.
    - Enforces a minimum sample size filter of **$\ge 20$ arrived flights** to ensure statistical significance.
    - Identifies chronic operational bottlenecks, such as:
-     - **VOZ (Voronezh) $\rightarrow$ LED (Pulkovo)**: **$11.1\%$ delay rate** (10 delayed out of 90 flights, average delay 48.6 minutes).
+     - **VOZ (Voronezh) $\rightarrow$ LED (Pulkovo)**: **$11.1\%$ delay rate** (10 delayed out of 90 flights, average delay 191.3 minutes).
 
 ---
 
@@ -551,16 +555,16 @@ The Revenue tab provides commercial and revenue management analysts with yield i
    - **Left Y-Axis (Bar)**: Gross route revenue in Rubles (₽).
    - **Right Y-Axis (Line)**: Cumulative percentage share of total network revenue ($0\%$ to $100\%$).
    - **Top 50 Routes Plotted**: Illustrates extreme Pareto revenue concentration:
-     - Out of 451 revenue-generating routes, just **38 routes account for 50% of the entire 37.7B ₽ revenue**.
+     - Out of 457 revenue-generating routes, just **39 routes account for 50% of the entire 47.0B ₽ revenue**.
      - Top revenue drivers connect Moscow (SVO/DME/VKO) to high-demand business centers and resort destinations (Novosibirsk, St. Petersburg, Sochi, Vladivostok, Khabarovsk).
 2. **Revenue by Fare Class (Doughnut Chart)**:
    - Breaks down commercial income across cabin classes:
-     - **Economy**: Dominates overall passenger volume and gross revenue base (~$85\%$).
+     - **Economy**: Dominates overall passenger volume and gross revenue base (~$71\%$).
      - **Business**: Generates disproportionately high margin per available seat kilometer.
      - **Comfort**: Premium economy service offered exclusively on select long-haul wide-body aircraft (Boeing 777-300).
 3. **Monthly Revenue Trend (Line Chart)**:
-   - Tracks monthly gross revenue progression across June, July, and August 2017.
-   - Demonstrates peak summer leisure travel demand during July and August.
+   - Tracks monthly gross revenue progression across May to September 2017 (May and September partial).
+   - Demonstrates peak summer leisure travel demand during June, July and August.
 
 ---
 
@@ -571,14 +575,14 @@ The Fleet tab diagnoses aircraft productivity, capacity matching, and cabin util
 1. **Average Load Factor by Aircraft Model (Horizontal Bar Chart)**:
    - Displays stark operational contrasts across aircraft types:
      - **Boeing 777-300 (`773`)**: High asset utilization with **$\approx 72.8\%$ load factor** (wide-body aircraft deployed on high-density transcontinental routes such as Moscow $\leftrightarrow$ Far East).
-     - **Airbus A321-200 (`321`) & Boeing 737-300 (`733`)**: Trunk route narrow-bodies operating at **$60\% - 68\%$ load factors**.
-     - **Sukhoi Superjet 100 (`SU9`)**: Regional jet operating at **$\approx 55\%$ load factor**.
+     - **Boeing 737-300 (`733`)** at **$\approx 63.0\%$** and **Airbus A321-200 (`321`)** at **$\approx 37.7\%$ load factor**: trunk route narrow-bodies.
+     - **Sukhoi Superjet 100 (`SU9`)**: Regional jet operating at **$\approx 53.7\%$ load factor**.
      - **Cessna 208 Caravan (`CN1`)**: Operates at a low **$\approx 16.0\%$ load factor**.
        - *Business Meaning*: The Cessna 208 carries only 12 passengers on remote, short-hop regional routes across northern and Siberian regions. These flights serve as subsidized lifeline routes connecting remote settlements, where low passenger load factors are standard and expected.
 2. **Seat Configuration by Cabin (Stacked Bar Chart)**:
    - Visualizes physical seat layouts per aircraft model:
-     - Boeing 777-300: 402 economy seats, 30 business seats, and 48 comfort seats (total 464).
-     - Boeing 767-300: 222 economy seats, 30 business seats (total 252).
+     - Boeing 777-300: 324 economy seats, 30 business seats, and 48 comfort seats (total 402).
+     - Boeing 767-300: 192 economy seats, 30 business seats (total 222).
      - Airbus A319: 96 economy seats, 20 business seats (total 116).
      - Cessna 208: 12 economy seats only.
 3. **Fleet Operational Utilization Table**:
@@ -597,7 +601,7 @@ The Pipeline tab provides data engineers and evaluators with complete audit tran
   - **Execution Window**: UTC timestamps for `Started At` and `Finished At`.
   - **Status Indicator**: Formatted badge (`success` in green or `failed` in red).
   - **Layer Row Counts**:
-    - **Bronze Rows**: Total raw records appended during this batch across all 8 ingested tables.
+    - **Bronze Rows**: Total raw records appended during this batch across the 3 raw snapshot tables.
     - **Silver Rows**: Total deduplicated, clean records merged into curated Silver tables.
     - **Gold Rows**: Analytical mart row counts.
   - **Quarantine Counter**: Number of malformed records routed to `lake.silver.quarantine` during the batch run. A quarantine count of `0` confirms perfect source referential integrity and format compliance.
@@ -614,13 +618,13 @@ When the simulation and Medallion Lakehouse pipeline are executed up to the fina
 | **Arrived Flight Volume** | Exactly **49,235** Arrived flights | `GET /api/summary` $\rightarrow$ `total_flights` |
 | **Delayed Flight Volume** | Exactly **2,394** delayed flights ($>15$ min departure delay) | `GET /api/summary` $\rightarrow$ `total_delayed` |
 | **Overall Delay Rate** | **4.86%** ($2,394 / 49,235$) | `GET /api/summary` $\rightarrow$ `delay_rate` |
-| **Gross Network Revenue** | **37,707,314,900 ₽** ($\approx$ **37.7B ₽**) | `GET /api/summary` $\rightarrow$ `total_revenue` |
-| **Revenue Routes** | **451** distinct directional city-pair routes | `GET /api/marts/route_pareto` record count |
-| **Pareto 50% Concentration** | Top **38 routes** generate **50.0%** of total network revenue | `gold_route_pareto` where `cum_share <= 0.50` |
-| **Pareto 80% Concentration** | Top **153 routes** generate **80.0%** of total network revenue | `gold_route_pareto` where `cum_share <= 0.80` |
+| **Gross Network Revenue** | **47,004,388,200 ₽** ($\approx$ **47.0B ₽**) | `GET /api/summary` $\rightarrow$ `total_revenue` |
+| **Revenue Routes** | **457** distinct directional city-pair routes | `GET /api/marts/route_pareto` record count |
+| **Pareto 50% Concentration** | Top **39 routes** generate **50.0%** of total network revenue | `gold_route_pareto` where `cum_share <= 0.50` |
+| **Pareto 80% Concentration** | Top **129 routes** generate **80.0%** of total network revenue | `gold_route_pareto` where `cum_share <= 0.80` |
 | **Boeing 777-300 Load Factor** | **72.8%** ($\approx 0.728$) | `GET /api/marts/fleet?aircraft_code=773` |
 | **Cessna 208 Caravan Load Factor** | **16.0%** ($\approx 0.160$) | `GET /api/marts/fleet?aircraft_code=CN1` |
-| **Top Delayed Route Hotspot** | Voronezh (`VOZ`) $\rightarrow$ Pulkovo (`LED`): **11.1%** delay rate (10 / 90 flights) | `GET /api/marts/delay_by_route` |
+| **Delayed Route Benchmark** | Voronezh (`VOZ`) $\rightarrow$ Pulkovo (`LED`): **11.1%** delay rate (10 / 90 flights) | `GET /api/marts/delay_by_route` |
 | **Active Airports** | **104** operational airports | `GET /api/airports` record count |
-| **Active Fleet Models** | **8** commercial aircraft models | `GET /api/marts/fleet` record count |
+| **Active Fleet Models** | **9** commercial aircraft models (8 with arrived flights; Airbus A320-200 has none) | `GET /api/marts/fleet` record count |
 | **Data Quarantine Anomalies** | **0** anomalies in standard baseline | `GET /api/runs` $\rightarrow$ `quarantine: 0` |

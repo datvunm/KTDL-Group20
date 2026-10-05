@@ -29,12 +29,14 @@ def test_task_order():
     dag = dagbag.dags.get("airlines_medallion") or dagbag.get_dag("airlines_medallion")
     assert dag is not None
 
-    tasks = ["check_source", "bronze", "silver", "gold", "publish"]
+    tasks = ["check_source", "prepare_raw_source", "bronze", "silver", "gold", "publish"]
     for task_id in tasks:
         assert dag.has_task(task_id), f"Missing task {task_id}"
 
-    # Verify linear dependency chain: check_source -> bronze -> silver -> gold -> publish
-    assert dag.get_task("bronze") in dag.get_task("check_source").downstream_list
+    # Verify linear dependency chain:
+    # check_source -> prepare_raw_source -> bronze -> silver -> gold -> publish
+    assert dag.get_task("prepare_raw_source") in dag.get_task("check_source").downstream_list
+    assert dag.get_task("bronze") in dag.get_task("prepare_raw_source").downstream_list
     assert dag.get_task("silver") in dag.get_task("bronze").downstream_list
     assert dag.get_task("gold") in dag.get_task("silver").downstream_list
     assert dag.get_task("publish") in dag.get_task("gold").downstream_list
@@ -64,6 +66,42 @@ def test_bronze_rendered_application_args_sanitization():
     assert ":" not in sanitized_id
     assert "+" not in sanitized_id
     assert sanitized_id == "manual__2026_10_04T10_00_00_00_00"
+
+
+def test_raw_source_sql_splits_into_ddl_and_checks():
+    import sys
+
+    sys.path.insert(0, DAGS_FOLDER)
+    from airlines_medallion import split_sql_statements
+
+    sql_path = Path(__file__).resolve().parents[2] / "pipeline" / "sql" / "bronze" / "airline_data_source.sql"
+    statements = split_sql_statements(sql_path.read_text(encoding="utf-8"))
+    heads = [s.split()[0].upper() for s in statements]
+
+    # 3 x (DROP, CREATE), 3 validation SELECTs, 1 recovery WITH; export lines are comments
+    assert heads == ["DROP", "CREATE"] * 3 + ["SELECT"] * 3 + ["WITH"]
+    assert all(not s.endswith(";") for s in statements)
+
+
+def test_raw_validation_checks():
+    import sys
+
+    sys.path.insert(0, DAGS_FOLDER)
+    from airlines_medallion import check_raw_validation
+
+    check_raw_validation(["ticket_flights", "booked_rows", "empty_seat_rows"], [(10, 10, 5)])
+    check_raw_validation(["airports_src", "airports_raw", "seats_src", "seats_raw"], [(3, 3, 7, 7)])
+    check_raw_validation(["missing_dep_airport", "missing_arr_airport", "missing_seat"], [(0, 0, 0)])
+    check_raw_validation(["table_name", "lost", "extra"], [("bookings", 0, 0), ("seats", 0, 0)])
+
+    with pytest.raises(ValueError):
+        check_raw_validation(["ticket_flights", "booked_rows", "empty_seat_rows"], [(10, 9, 5)])
+    with pytest.raises(ValueError):
+        check_raw_validation(["airports_src", "airports_raw", "seats_src", "seats_raw"], [(3, 2, 7, 7)])
+    with pytest.raises(ValueError):
+        check_raw_validation(["missing_dep_airport", "missing_arr_airport", "missing_seat"], [(0, 1, 0)])
+    with pytest.raises(ValueError):
+        check_raw_validation(["table_name", "lost", "extra"], [("bookings", 0, 2)])
 
 
 def test_spark_submit_hook_master_resolution(monkeypatch):
