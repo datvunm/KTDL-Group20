@@ -5,10 +5,9 @@ Batch Medallion data pipeline built with Apache Spark 3.5, Apache Iceberg, and M
 ## Architecture
 
 ```
-PostgreSQL (demo DB, schema bookings = simulated state)
-       │
-       ▼  (Airflow prepare_raw_source: sql/bronze/airline_data_source.sql)
+PostgreSQL (demo DB, schema raw = simulated state as of raw.now())
   [  Raw   ]  raw.flight_seat_reservations, raw.airport_sites, raw.aircraft_seat_layouts
+             (committed raw dump + source/simulate.sh, see source/README.md)
        │
        ▼  (JDBC full snapshot, cast complex types, partitioned read)
   [ Bronze ]  lake.bronze.* (3 append-only Iceberg tables, partitioned by days(_ingest_ts), _batch_id)
@@ -33,7 +32,6 @@ pipeline/
 ├── gold.py                  # Gold marts aggregation & snapshot expiration
 ├── publish.py               # Gold publishing to Mongo & driver metadata/indexes
 ├── sql/
-│   ├── bronze/              # airline_data_source.sql: raw source DDL + validation (run by Airflow)
 │   ├── silver/              # Numbered Silver DDL & MERGE scripts (00 to 08), raw -> entities
 │   └── gold/                # Gold mart CREATE OR REPLACE TABLE AS SELECT scripts
 ├── tests/

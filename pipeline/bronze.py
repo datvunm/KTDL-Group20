@@ -1,9 +1,8 @@
 """Bronze ingestion layer for Airlines Lakehouse.
 
 Reads the three denormalized raw source tables (schema raw in the demo DB,
-rebuilt by the Airflow task prepare_raw_source from
-sql/bronze/airline_data_source.sql) via JDBC and appends them as-is to
-Iceberg lake.bronze.* tables partitioned by days(_ingest_ts) and _batch_id:
+filled by the source simulator as of raw.now()) via JDBC and appends them
+as-is to Iceberg lake.bronze.* tables partitioned by days(_ingest_ts) and _batch_id:
 
 - flight_seat_reservations : one row per seat per flight + unseated bookings
 - airport_sites            : airport reference
@@ -87,7 +86,7 @@ def run_bronze(spark: SparkSession, run_id: str) -> None:
     init_watermark_table(spark)
 
     # 1. Fetch simulation cutoff timestamp from Postgres
-    cutoff_df = read_pg(spark, "SELECT bookings.now() AS cutoff")
+    cutoff_df = read_pg(spark, f"SELECT {RAW_SCHEMA}.now() AS cutoff")
     cutoff_val = cutoff_df.collect()[0]["cutoff"]
     if hasattr(cutoff_val, "strftime"):
         cutoff_str = f"{cutoff_val.strftime('%Y-%m-%d %H:%M:%S')}+00"

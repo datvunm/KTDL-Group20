@@ -40,7 +40,7 @@ The platform follows a modernized Medallion Lakehouse paradigm, decoupling compu
 ```mermaid
 flowchart TD
     subgraph Operational["1. Operational Source Tier"]
-        PG[("PostgreSQL 16 (db:5432)<br/>Schemas: archive & bookings<br/>STABLE clock: bookings.now()")]
+        PG[("PostgreSQL 16 (db:5432)<br/>Schemas: archive & raw<br/>STABLE clock: raw.now()")]
         SIM["Temporal Replay Simulator<br/>source/simulate.sh & simulate.sql"]
         SIM -->|Deterministic truncate & insert| PG
     end
@@ -65,17 +65,16 @@ flowchart TD
 
     subgraph Serving["5. Serving & Analytical Tier"]
         MG[("MongoDB 7.0 (mongo:27017)<br/>Database: airlines<br/>Collections: gold marts & pipeline_runs")]
-        API["FastAPI Analytical Service (app:8000)<br/>Uvicorn ASGI & Connection Pools"]
-        UI["Interactive Analytics Dashboard<br/>Leaflet.js + Chart.js (Port 8000)"]
+        API["FastAPI Analytical Service (app:8000, host :8005)<br/>Uvicorn ASGI & Connection Pools"]
+        UI["Interactive Analytics Dashboard<br/>Leaflet.js + Chart.js (Host port 8005)"]
         API --- UI
     end
 
     AF -->|1. check_source| PG
-    AF -->|2. prepare_raw_source: build raw.*| PG
-    AF -->|3. spark-submit bronze.py| SM
-    AF -->|4. spark-submit silver.py| SM
-    AF -->|5. spark-submit gold.py| SM
-    AF -->|6. spark-submit publish.py| SM
+    AF -->|2. spark-submit bronze.py| SM
+    AF -->|3. spark-submit silver.py| SM
+    AF -->|4. spark-submit gold.py| SM
+    AF -->|5. spark-submit publish.py| SM
 
     SM -.->|JDBC Read raw.* with type casts| PG
     SM -->|Append 3 raw snapshot tables| ICE
@@ -86,8 +85,8 @@ flowchart TD
 ```
 
 1. **PostgreSQL 16 (`db`)**:
-   - Acts as the operational OLTP database containing the standard PostgresPro Airlines demo schema.
-   - Houses two distinct schemas: `archive` (immutable ground truth containing 3 months of historical airline activity) and `bookings` (the dynamic operational schema whose contents reflect an exact point-in-time snapshot governed by `bookings.now()`).
+   - Acts as the operational source database holding the PostgresPro Airlines demo data in 3 denormalized raw tables (`flight_seat_reservations`, `airport_sites`, `aircraft_seat_layouts`).
+   - Houses two distinct schemas: `archive` (immutable ground truth containing 3 months of historical airline activity, restored from the committed raw dump) and `raw` (the dynamic source schema whose contents reflect an exact point-in-time snapshot governed by `raw.now()`).
 2. **Apache Airflow 2.10.5 (`airflow`)**:
    - Manages workflow orchestration through DAG `airlines_medallion`.
    - Utilizes `LocalExecutor` with an internal metadata store in PostgreSQL (`airflow` database).
@@ -115,7 +114,7 @@ All containers attach to an isolated user-defined Docker bridge network named `k
 
 | Container | Image | Host Port | Internal Port | Protocol / Purpose |
 |---|---|---|---|---|
-| `db` | `postgres:16-alpine` | _None_ | 5432 | PostgreSQL engine (demo OLTP & airflow metadata) |
+| `db` | `postgres:16` | **5432** | 5432 | PostgreSQL engine (demo OLTP & airflow metadata) |
 | `adminer` | `adminer:latest` | **8082** | 8080 | PostgreSQL Administration UI |
 | `mongo` | `mongo:7.0` | _None_ | 27017 | MongoDB document store engine |
 | `mongo-express` | `mongo-express:latest` | **8081** | 8081 | MongoDB Administrative Web Console |
@@ -124,14 +123,14 @@ All containers attach to an isolated user-defined Docker bridge network named `k
 | `spark` | `apache/spark:3.5.9` | **8080** | 7077 / 8080 | Port 7077: Spark Master RPC; Port 8080: Master Web UI |
 | `spark-worker` | `apache/spark:3.5.9` | _None_ | 8081 | Spark Worker Web UI |
 | `airflow` | `ktdl-airflow:2.10.5` | **8083** | 8080 | Airflow Standalone Webserver & Scheduler UI |
-| `app` | `ktdl-service-main:latest` | **8000** | 8000 | FastAPI REST service & Interactive Dashboard |
+| `app` | `ktdl-service-main:latest` | **8005** | 8000 | FastAPI REST service & Interactive Dashboard |
 
 ---
 
 ### Security & Isolation Rationale
 
 1. **Host Port Collisions & Zero-Exposure Policy**:
-   - Standard infrastructure ports such as `5432` (PostgreSQL), `27017` (MongoDB), `7077` (Spark RPC), and `9000` (HDFS RPC) are intentionally **not exposed** to the host network interface.
+   - Standard infrastructure ports such as `27017` (MongoDB), `7077` (Spark RPC), and `9000` (HDFS RPC) are intentionally **not exposed** to the host network interface. PostgreSQL `5432` is the exception: it is published so external SQL clients can inspect the source data.
    - This design guarantees that running the platform does not conflict with developers' existing local database or distributed systems installations.
    - Inter-service communication relies entirely on Docker internal DNS resolution within `ktdl-network`.
 2. **Explicit Administrative Boundary**:
@@ -146,53 +145,51 @@ All containers attach to an isolated user-defined Docker bridge network named `k
 The lifecycle of data through the Airlines Lakehouse spans five distinct chronological steps:
 
 ```
-[Raw Demo SQL Dump]
+[Committed Raw Dump: source/data/raw (3 denormalized tables, gzip parts)]
        │
        ▼  (source/load_dump.sh)
-[PostgreSQL: archive schema]
+[PostgreSQL: archive schema] (Full history)
        │
        ▼  (source/simulate.sh <cutoff>)
-[PostgreSQL: bookings schema] (Dynamic operational state up to bookings.now())
+[PostgreSQL: raw schema] (State of the 3 raw tables as of raw.now())
        │
-       ├─────────────────────────────────────────────┐
-       ▼ (1. check_source: PythonOperator)            │
-[Airflow DAG: airlines_medallion]                    │
-       │                                             │
-       ▼ (2. prepare_raw_source: PythonOperator)       │
-[PostgreSQL: raw schema (3 denormalized tables)] ◄───┘ (airline_data_source.sql)
+       ▼ (1. check_source: PythonOperator)
+[Airflow DAG: airlines_medallion]
        │
-       ▼ (3. spark-submit bronze.py)
+       ▼ (2. spark-submit bronze.py)
 [HDFS: lake.bronze.* (3 raw snapshot Iceberg tables)]
        │
-       ▼ (4. spark-submit silver.py)
+       ▼ (3. spark-submit silver.py)
 [HDFS: lake.silver.* (MERGE INTO)] ──► [HDFS: lake.silver.quarantine] (Conflicting / malformed rows)
        │
-       ▼ (5. spark-submit gold.py)
+       ▼ (4. spark-submit gold.py)
 [HDFS: lake.gold.* (Analytical Marts & Dims)] ──► [Iceberg snapshot expiration]
        │
-       ▼ (6. spark-submit publish.py)
+       ▼ (5. spark-submit publish.py)
 [MongoDB: airlines database (replace upsert & index builds)]
        │
        ▼
-[FastAPI REST API & Interactive UI Dashboard (:8000)]
+[FastAPI REST API & Interactive UI Dashboard (host :8005)]
 ```
 
 ### Operational Source & Simulation Architecture
 
-1. **Initial Baseline Load**:
-   - The script `source/load_dump.sh` downloads the PostgresPro Medium English Airlines dump (`demo-medium-en-20170815.sql`, ~1.5 GB uncompressed).
-   - It restores the dump into database `demo` and renames the resulting operational schema to `archive`. The original `bookings.now()` timestamp is preserved in `archive.now()` (`2017-08-15 18:00:00+03`).
-   - The script executes `source/schema.sql` to instantiate an identical set of 8 target tables inside schema `bookings`, creates performance indexes, and establishes a single-row state table `bookings.sim_state`.
-2. **Dynamic Clock Function**:
-   - `bookings.now()` is declared as a `STABLE` function:
+1. **Raw Dump (one-time conversion)**:
+   - The PostgresPro Medium English Airlines dump (`demo-medium-en-20170815.sql`, 8 normalized tables) was converted once by `source/export_raw_dump.sh` into 3 denormalized raw tables using [`source/build_raw.sql`](../source/build_raw.sql). Its validation and row-by-row recovery test confirmed the conversion is lossless (0 lost / 0 extra rows for all 8 original tables plus the route timetable).
+   - The result is committed to git in `source/data/raw/` as one gzip stream split into parts below GitHub's 100 MB limit (about 242 MB compressed, 1.2 GB SQL), with a `SHA256SUMS` file.
+2. **Initial Baseline Load**:
+   - The script `source/load_dump.sh` verifies the checksums, recreates database `demo`, and streams the parts (`cat | gunzip | psql`) into schema `archive` (data as of `2017-08-15 18:00:00+03`).
+   - The script executes `source/schema.sql` to instantiate the same 3 tables inside schema `raw`, an index on `raw.flight_seat_reservations(flight_id)`, and a single-row state table `raw.sim_state`.
+3. **Dynamic Clock Function**:
+   - `raw.now()` is declared as a `STABLE` function:
      ```sql
-     CREATE OR REPLACE FUNCTION bookings.now()
+     CREATE OR REPLACE FUNCTION raw.now()
      RETURNS timestamptz LANGUAGE sql STABLE AS $$
-         SELECT cutoff FROM bookings.sim_state LIMIT 1;
+         SELECT cutoff FROM raw.sim_state LIMIT 1;
      $$;
      ```
    - Because it is marked `STABLE` rather than `IMMUTABLE`, PostgreSQL query planners do not prematurely fold constant values across query runs, yet optimizer passes can leverage stable guarantees within a single query execution.
-   - `ALTER DATABASE demo SET search_path = bookings, public;` ensures that unqualified queries issued by Spark JDBC automatically target the active simulated state.
+   - `ALTER DATABASE demo SET search_path = raw, public;` ensures that unqualified queries automatically target the active simulated state.
 
 ### Airflow Medallion DAG Execution
 
@@ -200,26 +197,24 @@ The DAG `airlines_medallion` is triggered on-demand without an automatic cron sc
 
 1. **`check_source` (`PythonOperator`)**:
    - Connects directly to PostgreSQL `demo` database via `psycopg2`.
-   - Executes `SELECT bookings.now() AS cutoff, count(*) AS cnt FROM bookings.bookings;`.
+   - Executes `SELECT raw.now();` and checks that `raw.flight_seat_reservations` has booked rows (`ticket_no IS NOT NULL`).
    - Validates that the operational database is reachable, non-empty, and returns the active cutoff timestamp string (e.g. `'2017-08-15 18:00:00+00'`), passing it down the pipeline via Airflow XCom.
-2. **`prepare_raw_source` (`PythonOperator`)**:
-   - Executes `/opt/pipeline/sql/bronze/airline_data_source.sql` via `psycopg2` to rebuild `raw.flight_seat_reservations`, `raw.airport_sites` and `raw.aircraft_seat_layouts` from the simulated `bookings` schema, and asserts the script's validation queries.
-3. **`bronze` (`SparkSubmitOperator`)**:
+2. **`bronze` (`SparkSubmitOperator`)**:
    - Submits `/opt/pipeline/bronze.py` with parameter `--run-id <sanitized run_id>` to Spark master `spark://spark:7077`.
    - Reads the 3 raw tables via JDBC and appends full snapshots into Iceberg bronze tables.
-4. **`silver` (`SparkSubmitOperator`)**:
+3. **`silver` (`SparkSubmitOperator`)**:
    - Submits `/opt/pipeline/silver.py`.
    - Reads the current Bronze batch (`WHERE _batch_id = '${run_id}'`), splits the raw rows back into the 8 entities, executes conflict and business validation, reroutes invalid records into `lake.silver.quarantine`, and merges clean records into curated Silver Iceberg tables.
-5. **`gold` (`SparkSubmitOperator`)**:
+4. **`gold` (`SparkSubmitOperator`)**:
    - Submits `/opt/pipeline/gold.py`.
    - Aggregates Silver fact and dimension tables into analytical marts and dimension tables.
    - Executes Iceberg snapshot expiration (`CALL lake.system.expire_snapshots(...)`) to maintain clean storage bounds.
-6. **`publish` (`SparkSubmitOperator`)**:
+5. **`publish` (`SparkSubmitOperator`)**:
    - Submits `/opt/pipeline/publish.py`.
    - Synchronizes Gold marts into MongoDB collections using the Mongo-Spark Connector (`replace` upsert strategy).
    - Computes lineage and row-count metrics across all layers, recording a structured document in `pipeline_runs`.
    - PyMongo driver establishes auxiliary compound indexes on MongoDB collections.
-7. **Failure Callback (`on_failure_callback`)**:
+6. **Failure Callback (`on_failure_callback`)**:
    - If any operator fails, the DAG-level callback instantiates a PyMongo connection to record a `pipeline_runs` document with `status: "failed"` and timestamps, ensuring dashboard observability even during outages.
 
 ### Serving Layer & FastAPI Ingestion
@@ -238,24 +233,23 @@ The DAG `airlines_medallion` is triggered on-demand without an automatic cron sc
 
 The simulator (`source/simulate.sql`, orchestrated via `source/simulate.sh <cutoff>`) enforces business realism during time progression. It operates in a single atomic transaction (`BEGIN ... COMMIT`) configured with `SET LOCAL work_mem = '256MB'`.
 
-1. **Truncation & Dependency Ordering**:
-   - All 8 operational tables in schema `bookings` are truncated in reverse foreign-key dependency order:
-     ```
-     boarding_passes → ticket_flights → flights → tickets → bookings → seats → airports_data → aircrafts_data
-     ```
-2. **Static Dimension Replication**:
-   - `aircrafts_data`, `airports_data`, and `seats` are fully replicated from `archive`.
+The simulator works directly on the denormalized raw rows: it reads `archive.*` (full history) and writes `raw.*` (state as of `:cutoff`), applying the same rules the original 8-table simulator applied to `bookings`, `tickets`, `flights`, `ticket_flights` and `boarding_passes`.
+
+1. **Truncation**:
+   - The 3 tables in schema `raw` are truncated.
+2. **Static Reference Replication**:
+   - `airport_sites` and `aircraft_seat_layouts` are fully replicated from `archive`.
 3. **Temporal Horizon Filtering**:
-   - `bookings`: Only bookings created on or before the cutoff date are visible:
+   - A booking, with its ticket and flight segment columns, is visible only if it was created on or before the cutoff:
      ```sql
-     WHERE book_date <= CAST(:cutoff AS timestamptz)
+     book_date <= CAST(:cutoff AS timestamptz)
      ```
-   - `tickets`: Restricted to tickets linked to released bookings.
-   - `ticket_flights`: Restricted to flight coupons belonging to released tickets.
+     Otherwise those columns are NULL (the seat becomes empty) or the booked row without seat disappears.
 4. **Flight Release Horizon (31 Days)**:
-   - Flights are scheduled into the future. A flight is released if:
+   - Flights are scheduled into the future. A flight (with a row for every seat) is released if:
      - Its `scheduled_departure <= :cutoff + interval '31 days'`, **OR**
-     - It is already referenced by an existing released `ticket_flights` coupon (allowing advance bookings made > 31 days prior to remain referentially intact).
+     - It is booked by a released booking (allowing advance bookings made > 31 days prior to remain referentially intact).
+   - The route timetable columns (`days_of_week`, `duration`) are recomputed over the released flights.
 5. **Cutoff-Aware Flight State Machine**:
    - Flight status and actual timestamps are reconstructed strictly as they would have been observed at `:cutoff`:
      - **Cancelled**: If `archive.status = 'Cancelled'`, status remains `'Cancelled'`, and actual departure/arrival are forced to `NULL`.
@@ -265,29 +259,30 @@ The simulator (`source/simulate.sql`, orchestrated via `source/simulate.sh <cuto
        - If `archive.status = 'Delayed'` OR `actual_departure > scheduled_departure`, status is marked `'Delayed'`.
        - Otherwise, status is marked `'On Time'`.
      - **Scheduled**: For future flights where check-in has not opened (`scheduled_departure - interval '24 hours' > :cutoff`), status is `'Scheduled'`. Both actual timestamps are set to `NULL`.
-6. **Boarding Pass 24-Hour Check-In Rule**:
-   - Boarding passes represent passengers who have checked in. In airline operations, check-in opens 24 hours prior to scheduled departure.
-   - Boarding passes are only populated for released tickets whose flight is not `Cancelled` and whose check-in window has opened:
+6. **Boarding Pass 24-Hour Check-In Rule (seat assignment)**:
+   - A seat assignment (`seat_no` + `boarding_no` on a booked row) represents a passenger who has checked in. In airline operations, check-in opens 24 hours prior to scheduled departure.
+   - A released passenger sits on their archive seat only if the flight is not `Cancelled` and its check-in window has opened. Before that, the archive row splits into two rows: the empty seat, and the booking without seat:
      ```sql
-     WHERE f.scheduled_departure - interval '24 hours' <= CAST(:cutoff AS timestamptz)
-       AND f.status <> 'Cancelled';
+     checkin_open = a.status <> 'Cancelled'
+                    AND a.scheduled_departure - interval '24 hours' <= CAST(:cutoff AS timestamptz)
      ```
-7. **Acceptance Invariant**:
-   - At the final archive timestamp (`2017-08-15 18:00:00+03`), the simulator state perfectly matches `archive`. Executing `SELECT * FROM archive.flights EXCEPT SELECT * FROM bookings.flights;` yields exactly 0 rows.
+7. **Acceptance Invariants**:
+   - At the final archive timestamp (`2017-08-15 18:00:00+03`), the simulator state perfectly matches `archive`: `EXCEPT ALL` in both directions yields 0 rows for all 3 tables.
+   - At any cutoff, `raw` equals the output of the original pipeline (8-table simulator followed by `build_raw.sql`); verified row for row at 2017-05-01, 2017-05-20 12:00, 2017-06-15, 2017-07-15 and the final cutoff.
 
 ---
 
-### Raw Source Tables (`prepare_raw_source`)
+### Raw Source Tables
 
-Before ingestion, the Airflow task `prepare_raw_source` rebuilds three deliberately denormalized raw tables in PostgreSQL schema `raw`, executing [`pipeline/sql/bronze/airline_data_source.sql`](../pipeline/sql/bronze/airline_data_source.sql) with `search_path = raw, bookings` so they reflect the current simulated state:
+The source data is kept as three deliberately denormalized raw tables, identical in `archive` (full history) and `raw` (simulated state). They were derived once from the 8 normalized demo tables by [`source/build_raw.sql`](../source/build_raw.sql):
 
 | Raw table | Grain | Source tables folded in |
 |---|---|---|
-| `raw.flight_seat_reservations` | One row per physical seat per flight (ticket columns NULL when empty), plus one row per booked segment without a boarding pass (seat columns NULL) | `flights`, derived route timetable (`days_of_week`, `duration`), `boarding_passes`, `ticket_flights`, `tickets`, `bookings` |
-| `raw.airport_sites` | One row per airport | `airports_data` |
-| `raw.aircraft_seat_layouts` | One row per seat per aircraft model | `aircrafts_data`, `seats` |
+| `flight_seat_reservations` | One row per physical seat per flight (ticket columns NULL when empty), plus one row per booked segment without a boarding pass (seat columns NULL) | `flights`, derived route timetable (`days_of_week`, `duration`), `boarding_passes`, `ticket_flights`, `tickets`, `bookings` |
+| `airport_sites` | One row per airport | `airports_data` |
+| `aircraft_seat_layouts` | One row per seat per aircraft model | `aircrafts_data`, `seats` |
 
-The task commits everything in one transaction and fails the DAG unless the script's validation queries pass: booked rows = `ticket_flights` rows, lossless reference copies, and zero unresolved airport/seat keys. The heavier row-by-row recovery test runs only with `RAW_RECOVERY_CHECK=1`. At the final cutoff `flight_seat_reservations` holds **5,513,920** rows (2,360,335 booked + 3,153,585 empty seats).
+At the final cutoff `flight_seat_reservations` holds **5,513,920** rows (2,360,335 booked + 3,153,585 empty seats).
 
 ### Bronze Ingestion & Watermarking
 
@@ -298,11 +293,11 @@ The Bronze layer (`pipeline/bronze.py`) copies the three raw tables as-is from P
 2. **Metadata Columns**:
    - `_ingest_ts` (`timestamp`): UTC timestamp when Spark processed the batch.
    - `_batch_id` (`string`): The Airflow run identifier.
-   - `_source_now` (`timestamp`): The simulation cutoff returned by `bookings.now()`.
+   - `_source_now` (`timestamp`): The simulation cutoff returned by `raw.now()`.
 3. **Partitioning Strategy**:
    - `partitionedBy(days(_ingest_ts), _batch_id)`; the identity `_batch_id` partition lets Silver prune to the current batch.
 4. **Full Snapshots**:
-   - Every run takes a full snapshot of the three tables. The raw grain has no change-tracking column, and seat occupancy and flight statuses change between cutoffs. `flight_seat_reservations` is read with an 8-way JDBC partitioned query on `flight_id` (indexed by `prepare_raw_source`).
+   - Every run takes a full snapshot of the three tables. The raw grain has no change-tracking column, and seat occupancy and flight statuses change between cutoffs. `flight_seat_reservations` is read with an 8-way JDBC partitioned query on `flight_id` (indexed by `source/schema.sql`).
 5. **Watermark Management (`lake.meta.watermarks`)**:
    - After all three loads succeed, the loaded cutoff is recorded per table via Iceberg `MERGE INTO`.
 
@@ -464,7 +459,7 @@ The publishing phase (`pipeline/publish.py`) transitions analytical tables from 
 
 ## 4. Dashboard Walkthrough & Business Intelligence
 
-The dashboard is accessible at `http://localhost:8000` and contains six specialized views:
+The dashboard is accessible at `http://localhost:8005` and contains six specialized views:
 
 ```
 ┌────────────────────────────────────────────────────────────────────────────────────────┐
@@ -597,7 +592,7 @@ The Pipeline tab provides data engineers and evaluators with complete audit tran
 - **Pipeline Execution History Table**:
   - Displays the last 20 medallion pipeline executions from `pipeline_runs`.
   - **Run ID**: Unique execution batch identifier (e.g. `20261004_120000`).
-  - **Source Cutoff**: The operational simulation cutoff time captured from `bookings.now()`.
+  - **Source Cutoff**: The operational simulation cutoff time captured from `raw.now()`.
   - **Execution Window**: UTC timestamps for `Started At` and `Finished At`.
   - **Status Indicator**: Formatted badge (`success` in green or `failed` in red).
   - **Layer Row Counts**:
@@ -614,7 +609,7 @@ When the simulation and Medallion Lakehouse pipeline are executed up to the fina
 
 | Dimension / Metric | Benchmark Value | Verification Query / Endpoint |
 |---|---|---|
-| **Data Integrity Invariant** | Identical row counts across all 8 tables; `archive.flights EXCEPT bookings.flights` = 0 | `source/simulate.sh` output & PostgreSQL verification |
+| **Data Integrity Invariant** | All 3 `raw` tables equal `archive` (`EXCEPT ALL` both ways = 0 rows) | `source/simulate.sh` output & PostgreSQL verification |
 | **Arrived Flight Volume** | Exactly **49,235** Arrived flights | `GET /api/summary` $\rightarrow$ `total_flights` |
 | **Delayed Flight Volume** | Exactly **2,394** delayed flights ($>15$ min departure delay) | `GET /api/summary` $\rightarrow$ `total_delayed` |
 | **Overall Delay Rate** | **4.86%** ($2,394 / 49,235$) | `GET /api/summary` $\rightarrow$ `delay_rate` |

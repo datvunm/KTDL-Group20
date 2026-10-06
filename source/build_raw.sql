@@ -6,6 +6,10 @@
 --   2. airport_sites            : airport sites (reference)
 --   3. aircraft_seat_layouts    : aircraft models + seat map (reference)
 --
+-- Run once by source/export_raw_dump.sh (search_path = raw, bookings) to
+-- produce the committed raw dump (source/data/raw), which load_dump.sh
+-- restores into schema archive.
+--
 -- Principles:
 --   * Values are copied as-is from the source tables (no derived columns,
 --     no type conversion). point / array / interval / jsonb types are kept
