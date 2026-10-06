@@ -221,5 +221,7 @@ __marimo__/
 # Streamlit
 .streamlit/secrets.toml
 
-# Source demo dump data
-source/data/
+# Source demo dump data: the original download is ignored, the raw dump
+# parts in source/data/raw/ (built by source/export_raw_dump.sh) are committed
+source/data/*
+!source/data/raw/

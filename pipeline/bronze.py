@@ -1,13 +1,19 @@
 """Bronze ingestion layer for Airlines Lakehouse.
 
-Reads tables from PostgreSQL demo schema via JDBC and appends to Iceberg
-lake.bronze.* tables partitioned by days(_ingest_ts).
-Tracks incremental watermarks in lake.meta.watermarks.
+Reads the three denormalized raw source tables (schema raw in the demo DB,
+filled by the source simulator as of raw.now()) via JDBC and appends them
+as-is to Iceberg lake.bronze.* tables partitioned by days(_ingest_ts) and _batch_id:
+
+- flight_seat_reservations : one row per seat per flight + unseated bookings
+- airport_sites            : airport reference
+- aircraft_seat_layouts    : aircraft model + seat map reference
+
+Every run takes a full snapshot (the raw grain has no change-tracking
+column, and seat/status rows change between cutoffs). The cutoff of each
+load is recorded in lake.meta.watermarks.
 """
 
 import logging
-from datetime import datetime, timezone
-from typing import Optional
 
 from pyspark.sql import DataFrame, SparkSession
 from pyspark.sql import functions as F
@@ -17,7 +23,9 @@ from common import ensure_namespaces, get_spark, parse_args, read_pg
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
 logger = logging.getLogger(__name__)
 
-DEFAULT_WATERMARK = "1900-01-01 00:00:00+00"
+RAW_SCHEMA = "raw"
+BRONZE_TABLES = ["aircraft_seat_layouts", "airport_sites", "flight_seat_reservations"]
+FSR_PARTITIONS = 8
 
 
 def init_watermark_table(spark: SparkSession) -> None:
@@ -30,24 +38,6 @@ def init_watermark_table(spark: SparkSession) -> None:
             updated_at timestamp
         ) USING iceberg
     """)
-
-
-def get_watermark(spark: SparkSession, table_name: str) -> str:
-    """Fetch the latest watermark for table_name or return the 1900 default."""
-    try:
-        rows = (
-            spark.sql(f"SELECT watermark FROM lake.meta.watermarks WHERE table_name = '{table_name}'")
-            .collect()
-        )
-        if rows and rows[0]["watermark"] is not None:
-            wm_val = rows[0]["watermark"]
-            if hasattr(wm_val, "strftime"):
-                return f"{wm_val.strftime('%Y-%m-%d %H:%M:%S')}+00"
-            s = str(wm_val)
-            return s if s.endswith("+00") or s.endswith("Z") else f"{s}+00"
-    except Exception as e:
-        logger.warning("Could not read watermark for %s: %s; using default", table_name, e)
-    return DEFAULT_WATERMARK
 
 
 def update_watermark(spark: SparkSession, table_name: str, cutoff_str: str, run_id: str) -> None:
@@ -78,7 +68,7 @@ def write_bronze(spark: SparkSession, df: DataFrame, table_name: str) -> None:
         df.writeTo(full_table).append()
     else:
         logger.info("Creating new partitioned Iceberg table %s", full_table)
-        df.writeTo(full_table).partitionedBy(F.days(F.col("_ingest_ts"))).create()
+        df.writeTo(full_table).partitionedBy(F.days(F.col("_ingest_ts")), F.col("_batch_id")).create()
 
 
 def add_metadata(df: DataFrame, run_id: str, cutoff_str: str) -> DataFrame:
@@ -96,7 +86,7 @@ def run_bronze(spark: SparkSession, run_id: str) -> None:
     init_watermark_table(spark)
 
     # 1. Fetch simulation cutoff timestamp from Postgres
-    cutoff_df = read_pg(spark, "SELECT bookings.now() AS cutoff")
+    cutoff_df = read_pg(spark, f"SELECT {RAW_SCHEMA}.now() AS cutoff")
     cutoff_val = cutoff_df.collect()[0]["cutoff"]
     if hasattr(cutoff_val, "strftime"):
         cutoff_str = f"{cutoff_val.strftime('%Y-%m-%d %H:%M:%S')}+00"
@@ -105,114 +95,58 @@ def run_bronze(spark: SparkSession, run_id: str) -> None:
         cutoff_str = s if s.endswith("+00") or s.endswith("Z") else f"{s}+00"
     logger.info("Ingesting bronze batch %s with cutoff %s", run_id, cutoff_str)
 
-    # 2. Ingest dimensional / full tables: aircrafts_data, airports_data, seats
-    logger.info("Loading aircrafts_data...")
-    df_aircrafts = read_pg(
+    # 2. Reference tables: full copy of airport_sites and aircraft_seat_layouts
+    logger.info("Loading %s.aircraft_seat_layouts...", RAW_SCHEMA)
+    df_layouts = read_pg(
         spark,
-        "SELECT aircraft_code, model::text AS model, range FROM bookings.aircrafts_data",
+        f"SELECT aircraft_code, model::text AS model, range, seat_no, seats_fare_conditions "
+        f"FROM {RAW_SCHEMA}.aircraft_seat_layouts",
     )
-    write_bronze(spark, add_metadata(df_aircrafts, run_id, cutoff_str), "aircrafts_data")
+    write_bronze(spark, add_metadata(df_layouts, run_id, cutoff_str), "aircraft_seat_layouts")
 
-    logger.info("Loading airports_data...")
+    logger.info("Loading %s.airport_sites...", RAW_SCHEMA)
     df_airports = read_pg(
         spark,
-        "SELECT airport_code, airport_name::text AS airport_name, city::text AS city, "
-        "coordinates::text AS coordinates, timezone FROM bookings.airports_data",
+        f"SELECT airport_code, airport_name::text AS airport_name, city::text AS city, "
+        f"coordinates::text AS coordinates, timezone FROM {RAW_SCHEMA}.airport_sites",
     )
-    write_bronze(spark, add_metadata(df_airports, run_id, cutoff_str), "airports_data")
+    write_bronze(spark, add_metadata(df_airports, run_id, cutoff_str), "airport_sites")
 
-    logger.info("Loading seats...")
-    df_seats = read_pg(
+    # 3. flight_seat_reservations: full snapshot with partitioned JDBC read on flight_id.
+    # jsonb / int[] / interval are cast to text to keep the raw values as-is.
+    logger.info("Loading %s.flight_seat_reservations snapshot...", RAW_SCHEMA)
+    bounds = read_pg(
         spark,
-        "SELECT aircraft_code, seat_no, fare_conditions FROM bookings.seats",
-    )
-    write_bronze(spark, add_metadata(df_seats, run_id, cutoff_str), "seats")
-
-    # 3. Ingest flights: full snapshot each run with 4-partition JDBC read
-    logger.info("Loading flights snapshot...")
-    bounds_df = read_pg(
-        spark,
-        "SELECT min(flight_id) AS min_id, max(flight_id) AS max_id FROM bookings.flights",
-    )
-    bounds = bounds_df.collect()[0]
+        f"SELECT min(flight_id) AS min_id, max(flight_id) AS max_id FROM {RAW_SCHEMA}.flight_seat_reservations",
+    ).collect()[0]
     min_id, max_id = bounds["min_id"], bounds["max_id"]
-    flights_sql = (
-        "SELECT flight_id, flight_no, scheduled_departure, scheduled_arrival, "
-        "departure_airport, arrival_airport, status, aircraft_code, actual_departure, actual_arrival "
-        "FROM bookings.flights"
+    fsr_sql = (
+        "SELECT flight_id, flight_no, status, scheduled_departure, scheduled_arrival, "
+        "actual_departure, actual_arrival, departure_airport, arrival_airport, aircraft_code, "
+        "days_of_week::text AS days_of_week, duration::text AS duration, "
+        "seat_no, boarding_no, "
+        "ticket_no, ticket_flights_fare_conditions, amount, "
+        "book_ref, passenger_id, passenger_name, contact_data::text AS contact_data, "
+        "book_date, total_amount "
+        f"FROM {RAW_SCHEMA}.flight_seat_reservations"
     )
     if min_id is not None and max_id is not None and min_id < max_id:
-        df_flights = read_pg(
+        df_fsr = read_pg(
             spark,
-            flights_sql,
+            fsr_sql,
             partition_column="flight_id",
             lower=min_id,
             upper=max_id,
-            num_partitions=4,
+            num_partitions=FSR_PARTITIONS,
         )
     else:
-        df_flights = read_pg(spark, flights_sql)
-    write_bronze(spark, add_metadata(df_flights, run_id, cutoff_str), "flights")
+        df_fsr = read_pg(spark, fsr_sql)
+    write_bronze(spark, add_metadata(df_fsr, run_id, cutoff_str), "flight_seat_reservations")
 
-    # 4. Ingest bookings: incremental window (wm, cutoff]
-    wm_bookings = get_watermark(spark, "bookings")
-    logger.info("Loading bookings with window (%s, %s]...", wm_bookings, cutoff_str)
-    df_bookings = read_pg(
-        spark,
-        f"SELECT book_ref, book_date, total_amount FROM bookings.bookings "
-        f"WHERE book_date > '{wm_bookings}' AND book_date <= '{cutoff_str}'",
-    )
-    write_bronze(spark, add_metadata(df_bookings, run_id, cutoff_str), "bookings")
-
-    # 5. Ingest tickets: join bookings on same window
-    logger.info("Loading tickets...")
-    df_tickets = read_pg(
-        spark,
-        f"SELECT t.ticket_no, t.book_ref, t.passenger_id, t.passenger_name, "
-        f"t.contact_data::text AS contact_data "
-        f"FROM bookings.tickets t "
-        f"JOIN bookings.bookings b ON t.book_ref = b.book_ref "
-        f"WHERE b.book_date > '{wm_bookings}' AND b.book_date <= '{cutoff_str}'",
-    )
-    write_bronze(spark, add_metadata(df_tickets, run_id, cutoff_str), "tickets")
-
-    # 6. Ingest ticket_flights: join tickets -> bookings on same window
-    logger.info("Loading ticket_flights...")
-    df_ticket_flights = read_pg(
-        spark,
-        f"SELECT tf.ticket_no, tf.flight_id, tf.fare_conditions, tf.amount "
-        f"FROM bookings.ticket_flights tf "
-        f"JOIN bookings.tickets t ON tf.ticket_no = t.ticket_no "
-        f"JOIN bookings.bookings b ON t.book_ref = b.book_ref "
-        f"WHERE b.book_date > '{wm_bookings}' AND b.book_date <= '{cutoff_str}'",
-    )
-    write_bronze(spark, add_metadata(df_ticket_flights, run_id, cutoff_str), "ticket_flights")
-
-    # 7. Ingest boarding_passes: own watermark on release time
-    wm_boarding = get_watermark(spark, "boarding_passes")
-    logger.info("Loading boarding_passes with window (%s, %s]...", wm_boarding, cutoff_str)
-    df_boarding_passes = read_pg(
-        spark,
-        f"SELECT bp.ticket_no, bp.flight_id, bp.boarding_no, bp.seat_no "
-        f"FROM bookings.boarding_passes bp "
-        f"JOIN bookings.tickets t ON bp.ticket_no = t.ticket_no "
-        f"JOIN bookings.bookings b ON t.book_ref = b.book_ref "
-        f"JOIN bookings.flights f ON bp.flight_id = f.flight_id "
-        f"WHERE greatest(f.scheduled_departure - interval '24 hours', b.book_date) > '{wm_boarding}' "
-        f"  AND greatest(f.scheduled_departure - interval '24 hours', b.book_date) <= '{cutoff_str}'",
-    )
-    write_bronze(spark, add_metadata(df_boarding_passes, run_id, cutoff_str), "boarding_passes")
-
-    # 8. Update watermarks only after all loads succeed
+    # 4. Record the loaded cutoff only after all loads succeed
     logger.info("Updating watermarks to %s for run %s", cutoff_str, run_id)
-    update_watermark(spark, "bookings", cutoff_str, run_id)
-    update_watermark(spark, "tickets", cutoff_str, run_id)
-    update_watermark(spark, "ticket_flights", cutoff_str, run_id)
-    update_watermark(spark, "boarding_passes", cutoff_str, run_id)
-    update_watermark(spark, "aircrafts_data", cutoff_str, run_id)
-    update_watermark(spark, "airports_data", cutoff_str, run_id)
-    update_watermark(spark, "seats", cutoff_str, run_id)
-    update_watermark(spark, "flights", cutoff_str, run_id)
+    for table_name in BRONZE_TABLES:
+        update_watermark(spark, table_name, cutoff_str, run_id)
     logger.info("Bronze ingestion batch %s completed successfully", run_id)
 
 

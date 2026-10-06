@@ -44,14 +44,9 @@ GOLD_TABLES = [
 ]
 
 BRONZE_TABLES = [
-    "aircrafts_data",
-    "airports_data",
-    "seats",
-    "flights",
-    "bookings",
-    "tickets",
-    "ticket_flights",
-    "boarding_passes",
+    "aircraft_seat_layouts",
+    "airport_sites",
+    "flight_seat_reservations",
 ]
 
 SILVER_TABLES = [
@@ -191,7 +186,7 @@ def collect_metrics(spark: SparkSession, run_id: str) -> Dict[str, Any]:
     try:
         timing_row = spark.sql(
             f"SELECT min(_ingest_ts) AS started_at, max(_source_now) AS cutoff "
-            f"FROM lake.bronze.flights WHERE _batch_id = '{run_id}'"
+            f"FROM lake.bronze.flight_seat_reservations WHERE _batch_id = '{run_id}'"
         ).collect()
         if timing_row:
             started_at = timing_row[0]["started_at"]
