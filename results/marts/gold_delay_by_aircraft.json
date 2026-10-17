@@ -1,0 +1,82 @@
+[
+  {
+    "_id": "319",
+    "aircraft_code": "319",
+    "model": "Airbus A319-100",
+    "flights": 1840,
+    "delayed": 71,
+    "delay_rate": 0.03858695652173913,
+    "avg_delay_min": 195.42253521126761,
+    "_run_id": "manual__2026_10_04T11_59_13_00_00"
+  },
+  {
+    "_id": "SU9",
+    "aircraft_code": "SU9",
+    "model": "Sukhoi Superjet-100",
+    "flights": 12652,
+    "delayed": 624,
+    "delay_rate": 0.049320265570660764,
+    "avg_delay_min": 195.25160256410257,
+    "_run_id": "manual__2026_10_04T11_59_13_00_00"
+  },
+  {
+    "_id": "773",
+    "aircraft_code": "773",
+    "model": "Boeing 777-300",
+    "flights": 907,
+    "delayed": 35,
+    "delay_rate": 0.03858875413450937,
+    "avg_delay_min": 202.94285714285715,
+    "_run_id": "manual__2026_10_04T11_59_13_00_00"
+  },
+  {
+    "_id": "763",
+    "aircraft_code": "763",
+    "model": "Boeing 767-300",
+    "flights": 1812,
+    "delayed": 75,
+    "delay_rate": 0.041390728476821195,
+    "avg_delay_min": 192.24,
+    "_run_id": "manual__2026_10_04T11_59_13_00_00"
+  },
+  {
+    "_id": "CR2",
+    "aircraft_code": "CR2",
+    "model": "Bombardier CRJ-200",
+    "flights": 13439,
+    "delayed": 637,
+    "delay_rate": 0.04739936007143389,
+    "avg_delay_min": 196.78492935635794,
+    "_run_id": "manual__2026_10_04T11_59_13_00_00"
+  },
+  {
+    "_id": "321",
+    "aircraft_code": "321",
+    "model": "Airbus A321-200",
+    "flights": 2902,
+    "delayed": 171,
+    "delay_rate": 0.05892487939352171,
+    "avg_delay_min": 197.25730994152048,
+    "_run_id": "manual__2026_10_04T11_59_13_00_00"
+  },
+  {
+    "_id": "CN1",
+    "aircraft_code": "CN1",
+    "model": "Cessna 208 Caravan",
+    "flights": 13789,
+    "delayed": 678,
+    "delay_rate": 0.04916962796431938,
+    "avg_delay_min": 194.42772861356931,
+    "_run_id": "manual__2026_10_04T11_59_13_00_00"
+  },
+  {
+    "_id": "733",
+    "aircraft_code": "733",
+    "model": "Boeing 737-300",
+    "flights": 1894,
+    "delayed": 103,
+    "delay_rate": 0.05438225976768744,
+    "avg_delay_min": 194.7864077669903,
+    "_run_id": "manual__2026_10_04T11_59_13_00_00"
+  }
+]

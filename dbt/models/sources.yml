@@ -1,0 +1,178 @@
+version: 2
+
+sources:
+  - name: bronze
+    database: lake
+    schema: bronze
+    description: "Raw append-only landing layer ingested from PostgreSQL operational demo DB via Apache Spark batch JDBC."
+    tables:
+      - name: aircrafts_data
+        description: "Raw aircraft models with multilingual JSONB translations and range."
+        columns:
+          - name: aircraft_code
+            description: "Three-character IATA aircraft code (Primary Key)."
+            tests:
+              - unique
+              - not_null
+          - name: model
+            description: "JSON string containing English and Russian model names."
+          - name: range
+            description: "Maximum operating flight range in kilometers."
+            tests:
+              - not_null
+
+      - name: airports_data
+        description: "Raw airport geographic reference data with multilingual JSONB names and coordinates."
+        columns:
+          - name: airport_code
+            description: "Three-character IATA airport code (Primary Key)."
+            tests:
+              - unique
+              - not_null
+          - name: airport_name
+            description: "JSON string containing English and Russian airport names."
+          - name: city
+            description: "JSON string containing English and Russian city names."
+          - name: coordinates
+            description: "Point coordinate string formatted as (longitude, latitude)."
+          - name: timezone
+            description: "IANA timezone identifier string (e.g. Europe/Moscow)."
+
+      - name: seats
+        description: "Physical cabin configuration and travel classes per aircraft model."
+        columns:
+          - name: aircraft_code
+            description: "Aircraft code referencing aircrafts_data."
+            tests:
+              - not_null
+          - name: seat_no
+            description: "Physical cabin seat number (e.g. 1A, 12F)."
+            tests:
+              - not_null
+          - name: fare_conditions
+            description: "Travel class: Economy, Comfort, or Business."
+            tests:
+              - not_null
+              - accepted_values:
+                  values: ['Economy', 'Comfort', 'Business']
+
+      - name: bookings
+        description: "Commercial passenger booking records."
+        columns:
+          - name: book_ref
+            description: "Six-character alphanumeric booking reference code (Primary Key)."
+            tests:
+              - unique
+              - not_null
+          - name: book_date
+            description: "Timestamp when the booking was created in operational system."
+            tests:
+              - not_null
+          - name: total_amount
+            description: "Total monetary amount billed for all tickets in this booking (RUB)."
+            tests:
+              - not_null
+
+      - name: tickets
+        description: "Passenger ticket issuances linked to a commercial booking reference."
+        columns:
+          - name: ticket_no
+            description: "13-digit unique ticket number (Primary Key)."
+            tests:
+              - unique
+              - not_null
+          - name: book_ref
+            description: "Booking reference foreign key."
+            tests:
+              - not_null
+          - name: passenger_id
+            description: "Government document / identity number (masked downstream in Silver)."
+          - name: passenger_name
+            description: "Passenger full name in Latin alphabet."
+          - name: contact_data
+            description: "JSON string containing contact information (phone, email)."
+
+      - name: flights
+        description: "Scheduled and executed flight legs with operational departure and arrival timestamps."
+        columns:
+          - name: flight_id
+            description: "Surrogate integer primary key identifying individual flight leg."
+            tests:
+              - unique
+              - not_null
+          - name: flight_no
+            description: "Alphanumeric flight route number (e.g. PG0402)."
+            tests:
+              - not_null
+          - name: scheduled_departure
+            description: "Scheduled local/UTC departure timestamp."
+            tests:
+              - not_null
+          - name: scheduled_arrival
+            description: "Scheduled local/UTC arrival timestamp."
+            tests:
+              - not_null
+          - name: departure_airport
+            description: "Three-letter IATA code of origin airport."
+            tests:
+              - not_null
+          - name: arrival_airport
+            description: "Three-letter IATA code of destination airport."
+            tests:
+              - not_null
+          - name: status
+            description: "Operational flight lifecycle status."
+            tests:
+              - not_null
+              - accepted_values:
+                  values: ['On Time', 'Delayed', 'Departed', 'Arrived', 'Scheduled', 'Cancelled']
+          - name: aircraft_code
+            description: "Three-letter IATA code of assigned aircraft."
+            tests:
+              - not_null
+          - name: actual_departure
+            description: "Recorded actual wheels-off departure timestamp (NULL if not departed)."
+          - name: actual_arrival
+            description: "Recorded actual wheels-down arrival timestamp (NULL if not arrived)."
+
+      - name: ticket_flights
+        description: "Flight segment line items linking tickets to flights."
+        columns:
+          - name: ticket_no
+            description: "13-digit ticket number."
+            tests:
+              - not_null
+          - name: flight_id
+            description: "Flight leg identifier."
+            tests:
+              - not_null
+          - name: fare_conditions
+            description: "Travel class for this segment: Economy, Comfort, or Business."
+            tests:
+              - not_null
+              - accepted_values:
+                  values: ['Economy', 'Comfort', 'Business']
+          - name: amount
+            description: "Price paid for this flight segment (RUB)."
+            tests:
+              - not_null
+
+      - name: boarding_passes
+        description: "Airport check-in boarding passes with assigned seat numbers."
+        columns:
+          - name: ticket_no
+            description: "Ticket number."
+            tests:
+              - not_null
+          - name: flight_id
+            description: "Flight identifier."
+            tests:
+              - not_null
+          - name: boarding_no
+            description: "Sequential boarding sequence number within flight."
+            tests:
+              - not_null
+          - name: seat_no
+            description: "Assigned cabin seat number."
+            tests:
+              - not_null

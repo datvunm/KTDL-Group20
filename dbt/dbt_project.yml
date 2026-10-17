@@ -1,0 +1,27 @@
+name: 'airlines_lakehouse'
+version: '1.0.0'
+config-version: 2
+
+profile: 'airlines_lakehouse'
+
+model-paths: ["models"]
+analysis-paths: ["analyses"]
+test-paths: ["tests"]
+seed-paths: ["seeds"]
+macro-paths: ["macros"]
+
+target-path: "target"
+clean-targets:
+  - "target"
+  - "dbt_packages"
+
+models:
+  airlines_lakehouse:
+    silver:
+      +materialized: table
+      +schema: silver
+      +tags: ["silver", "medallion", "conformed"]
+    gold:
+      +materialized: table
+      +schema: gold
+      +tags: ["gold", "medallion", "marts"]

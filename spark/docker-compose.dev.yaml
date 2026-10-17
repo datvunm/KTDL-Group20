@@ -1,20 +1,29 @@
 services:
   spark:
-    image: apache/spark:latest
+    image: apache/spark:3.5.9-scala2.12-java17-python3-ubuntu
     hostname: spark
-    command: ["/opt/spark/bin/spark-class", "org.apache.spark.deploy.master.Master", "--host", "0.0.0.0", "--port", "7077", "--webui-port", "8080"]
+    command: ["/opt/spark/bin/spark-class", "org.apache.spark.deploy.master.Master", "--host", "spark", "--port", "7077", "--webui-port", "8080"]
     ports:
-      - '8080:8080'
-      - '7077:7077'
+      - "${SPARK_UI_PORT:-8080}:8080"
+    environment:
+      HADOOP_USER_NAME: ${HADOOP_USER_NAME:-root}
+    volumes:
+      - ../pipeline:/opt/pipeline:ro
     networks:
       - ktdl-network
 
   spark-worker:
-    image: apache/spark:latest
+    image: apache/spark:3.5.9-scala2.12-java17-python3-ubuntu
     hostname: spark-worker
     command: ["/opt/spark/bin/spark-class", "org.apache.spark.deploy.worker.Worker", "spark://spark:7077", "--webui-port", "8081"]
     depends_on:
       - spark
+    environment:
+      SPARK_WORKER_CORES: ${SPARK_WORKER_CORES:-2}
+      SPARK_WORKER_MEMORY: ${SPARK_WORKER_MEMORY:-2g}
+      HADOOP_USER_NAME: ${HADOOP_USER_NAME:-root}
+    volumes:
+      - ../pipeline:/opt/pipeline:ro
     networks:
       - ktdl-network
 

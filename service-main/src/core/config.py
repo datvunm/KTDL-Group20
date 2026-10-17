@@ -14,8 +14,7 @@ class Settings(BaseSettings):
     mongo_port: int = 27017
     mongo_user: str = "root"
     mongo_password: str = "123456"
-
-    kafka_bootstrap_servers: str = "kafka-0:9092,kafka-1:9092,kafka-2:9092"
+    mongo_db: str = "airlines"
 
     hdfs_url: str = "http://namenode:9870"
     hdfs_user: str = "root"

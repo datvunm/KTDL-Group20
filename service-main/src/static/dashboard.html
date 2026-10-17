@@ -1,0 +1,321 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Airlines Lakehouse — KTDL-Group20</title>
+
+  <!-- Leaflet CSS & JS from CDN -->
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+
+  <!-- Chart.js from CDN -->
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.2/dist/chart.umd.min.js"></script>
+
+  <!-- Dashboard CSS & JS -->
+  <link rel="stylesheet" href="/static/css/dashboard.css" />
+  <script src="/static/js/dashboard.js" defer></script>
+</head>
+<body>
+  <div class="dashboard-container">
+    <header>
+      <div class="header-brand">
+        <h1>✈️ Airlines Lakehouse Dashboard</h1>
+        <span class="badge badge-info">FastAPI &bull; Iceberg &bull; Mongo</span>
+      </div>
+      <div style="display: flex; align-items: center; gap: 8px;">
+        <a id="dbt-docs-link" href="http://localhost:8085" target="_blank" rel="noopener noreferrer" class="badge badge-success" style="text-decoration: none; display: inline-flex; align-items: center; gap: 4px; padding: 6px 12px; font-weight: 600;" title="Open interactive dbt lineage DAG graph and data dictionary on port 8085">
+          📊 Data Lineage (dbt docs) ↗
+        </a>
+        <span id="latest-run-badge" class="badge badge-warning">Pipeline: Checking...</span>
+      </div>
+    </header>
+
+    <!-- Navigation Tabs -->
+    <nav class="nav-tabs">
+      <button class="tab-btn active" data-tab="overview">Overview</button>
+      <button class="tab-btn" data-tab="map">Map</button>
+      <button class="tab-btn" data-tab="delays">Delays</button>
+      <button class="tab-btn" data-tab="revenue">Revenue</button>
+      <button class="tab-btn" data-tab="fleet">Fleet</button>
+      <button class="tab-btn" data-tab="pipeline">Pipeline</button>
+    </nav>
+
+    <!-- Filters Bar -->
+    <div class="filters-bar">
+      <div class="filter-group">
+        <label for="filter-month">Month:</label>
+        <select id="filter-month">
+          <option value="">All Months</option>
+        </select>
+      </div>
+      <div class="filter-group">
+        <label for="filter-airport">Dep Airport:</label>
+        <select id="filter-airport">
+          <option value="">All Airports</option>
+        </select>
+      </div>
+      <div class="filter-group">
+        <label for="filter-aircraft">Aircraft:</label>
+        <select id="filter-aircraft">
+          <option value="">All Aircraft</option>
+        </select>
+      </div>
+      <button id="btn-refresh" class="btn-refresh">↻ Refresh Data</button>
+    </div>
+
+    <!-- Main Content -->
+    <main>
+      <!-- TAB 1: OVERVIEW -->
+      <section id="tab-overview" class="tab-content active">
+        <div class="empty-state" style="display: none;">
+          <div class="empty-state-icon">📊</div>
+          <h3>No Lakehouse Data Available</h3>
+          <p>The medallion pipeline has not published any Gold marts yet. Run the Airflow DAG <code>airlines_medallion</code> to ingest bronze/silver data and build gold marts.</p>
+        </div>
+
+        <div class="tab-data">
+          <div class="kpi-grid">
+            <div class="kpi-card">
+              <div class="kpi-title">Total Revenue</div>
+              <div class="kpi-value" id="kpi-revenue">0 ₽</div>
+              <div class="kpi-sub">Across all routes &amp; fare classes</div>
+            </div>
+            <div class="kpi-card">
+              <div class="kpi-title">Total Flights</div>
+              <div class="kpi-value" id="kpi-flights">0</div>
+              <div class="kpi-sub">Arrived / scheduled flights</div>
+            </div>
+            <div class="kpi-card">
+              <div class="kpi-title">Delayed Flights</div>
+              <div class="kpi-value" id="kpi-delayed">0 (0.0%)</div>
+              <div class="kpi-sub">&gt; 15 min departure delay</div>
+            </div>
+            <div class="kpi-card">
+              <div class="kpi-title">Avg Load Factor</div>
+              <div class="kpi-value" id="kpi-load-factor">0.0%</div>
+              <div class="kpi-sub">Boarded seats / capacity</div>
+            </div>
+            <div class="kpi-card">
+              <div class="kpi-title">Active Fleet</div>
+              <div class="kpi-value" id="kpi-fleet-count">0 models</div>
+              <div class="kpi-sub">Commercial aircraft types</div>
+            </div>
+            <div class="kpi-card">
+              <div class="kpi-title">Airports Network</div>
+              <div class="kpi-value" id="kpi-airports-count">0 airports</div>
+              <div class="kpi-sub">Domestic destinations</div>
+            </div>
+          </div>
+
+          <div class="card">
+            <div class="card-title">Lakehouse Architecture Flow</div>
+            <p style="color: var(--text-secondary); margin-bottom: 1rem; font-size: 0.9rem;">
+              Postgres Airlines DB &rarr; Change Simulator &rarr; Spark (HDFS Bronze &amp; Silver Iceberg) &rarr; Gold Marts &rarr; MongoDB &rarr; FastAPI &amp; Dashboard
+            </p>
+            <div style="display: flex; gap: 1rem; flex-wrap: wrap;">
+              <span class="badge badge-info">Postgres DB</span> &rarr;
+              <span class="badge badge-info">HDFS Bronze (Iceberg append)</span> &rarr;
+              <span class="badge badge-info">Silver Cleaned (Iceberg merge)</span> &rarr;
+              <span class="badge badge-success">Gold Marts</span> &rarr;
+              <span class="badge badge-success">MongoDB</span> &rarr;
+              <span class="badge badge-success">FastAPI /api</span>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- TAB 2: MAP -->
+      <section id="tab-map" class="tab-content">
+        <div class="empty-state" style="display: none;">
+          <div class="empty-state-icon">🗺️</div>
+          <h3>No Map Data Available</h3>
+          <p>Airport dimensions and route lines have not been loaded into MongoDB.</p>
+        </div>
+
+        <div class="tab-data">
+          <div class="card">
+            <div class="card-title">
+              <span>Airports &amp; Top 100 Flight Routes</span>
+              <span style="font-size: 0.8rem; color: var(--text-muted); font-weight: normal;">
+                Airports sized by departure volume &bull; Interactive popups
+              </span>
+            </div>
+            <div id="map-container"></div>
+          </div>
+        </div>
+      </section>
+
+      <!-- TAB 3: DELAYS -->
+      <section id="tab-delays" class="tab-content">
+        <div class="empty-state" style="display: none;">
+          <div class="empty-state-icon">⏱️</div>
+          <h3>No Delay Statistics Available</h3>
+          <p>Gold delay heatmap and aircraft delay marts are empty.</p>
+        </div>
+
+        <div class="tab-data">
+          <div class="card">
+            <div class="card-title">Departure Delay Heatmap (Day of Week &times; Hour of Day)</div>
+            <div class="heatmap-wrapper">
+              <div id="delay-heatmap-grid" class="heatmap-grid"></div>
+            </div>
+          </div>
+
+          <div class="grid-2col">
+            <div class="card">
+              <div class="card-title">Delay Rate &amp; Duration by Aircraft Model</div>
+              <div class="chart-container">
+                <canvas id="chart-delay-aircraft"></canvas>
+              </div>
+            </div>
+
+            <div class="card">
+              <div class="card-title">Top 20 Most Delayed Routes (min 20 flights)</div>
+              <div class="table-responsive" style="max-height: 350px;">
+                <table id="table-delay-routes">
+                  <thead>
+                    <tr>
+                      <th>Origin</th>
+                      <th>Destination</th>
+                      <th>Flights</th>
+                      <th>Delayed</th>
+                      <th>Delay Rate</th>
+                      <th>Avg Delay</th>
+                    </tr>
+                  </thead>
+                  <tbody></tbody>
+                </table>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- TAB 4: REVENUE -->
+      <section id="tab-revenue" class="tab-content">
+        <div class="empty-state" style="display: none;">
+          <div class="empty-state-icon">💰</div>
+          <h3>No Revenue Data Available</h3>
+          <p>Gold route revenue and Pareto marts are not populated.</p>
+        </div>
+
+        <div class="tab-data">
+          <div class="card">
+            <div class="card-title">
+              <span>Top 50 Routes Revenue &amp; Cumulative Share (Pareto 80/20)</span>
+              <span style="font-size: 0.8rem; color: var(--text-muted); font-weight: normal;">
+                Bars: Revenue (₽) &bull; Line: Cumulative Revenue %
+              </span>
+            </div>
+            <div class="chart-container" style="height: 380px;">
+              <canvas id="chart-pareto"></canvas>
+            </div>
+          </div>
+
+          <div class="grid-2col">
+            <div class="card">
+              <div class="card-title">Revenue by Fare Class</div>
+              <div class="chart-container">
+                <canvas id="chart-fare-class"></canvas>
+              </div>
+            </div>
+
+            <div class="card">
+              <div class="card-title">Monthly Revenue Trend</div>
+              <div class="chart-container">
+                <canvas id="chart-monthly-rev"></canvas>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- TAB 5: FLEET -->
+      <section id="tab-fleet" class="tab-content">
+        <div class="empty-state" style="display: none;">
+          <div class="empty-state-icon">🛩️</div>
+          <h3>No Fleet Data Available</h3>
+          <p>Gold fleet mart is empty.</p>
+        </div>
+
+        <div class="tab-data">
+          <div class="grid-2col">
+            <div class="card">
+              <div class="card-title">Average Load Factor by Aircraft Model</div>
+              <div class="chart-container">
+                <canvas id="chart-fleet-lf"></canvas>
+              </div>
+            </div>
+
+            <div class="card">
+              <div class="card-title">Seat Configuration (Economy / Comfort / Business)</div>
+              <div class="chart-container">
+                <canvas id="chart-seat-config"></canvas>
+              </div>
+            </div>
+          </div>
+
+          <div class="card">
+            <div class="card-title">Fleet Utilization &amp; Operational Statistics</div>
+            <div class="table-responsive">
+              <table id="table-fleet">
+                <thead>
+                  <tr>
+                    <th>Code</th>
+                    <th>Model</th>
+                    <th>Range</th>
+                    <th>Total Seats</th>
+                    <th>Flights</th>
+                    <th>Flight Hours</th>
+                    <th>Avg Duration</th>
+                    <th>Avg Load Factor</th>
+                  </tr>
+                </thead>
+                <tbody></tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- TAB 6: PIPELINE -->
+      <section id="tab-pipeline" class="tab-content">
+        <div class="empty-state" style="display: none;">
+          <div class="empty-state-icon">⚙️</div>
+          <h3>No Pipeline Execution History</h3>
+          <p>No Airflow execution runs have been logged in <code>pipeline_runs</code> yet.</p>
+        </div>
+
+        <div class="tab-data">
+          <div class="card">
+            <div class="card-title">Latest 20 Pipeline Medallion Ingestion Runs</div>
+            <div class="table-responsive">
+              <table id="table-pipeline">
+                <thead>
+                  <tr>
+                    <th>Run ID</th>
+                    <th>Source Cutoff</th>
+                    <th>Started At</th>
+                    <th>Finished At</th>
+                    <th>Status</th>
+                    <th>Bronze Rows</th>
+                    <th>Silver Rows</th>
+                    <th>Gold Rows</th>
+                    <th>Quarantine</th>
+                  </tr>
+                </thead>
+                <tbody></tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+      </section>
+    </main>
+
+    <footer>
+      KTDL-Group20 Airlines Lakehouse Platform &bull; FastAPI Service &bull; Airflow + Spark + Iceberg + MongoDB
+    </footer>
+  </div>
+</body>
+</html>

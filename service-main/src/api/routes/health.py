@@ -20,10 +20,6 @@ def health_mongo() -> dict:
     return health.check_mongo()
 
 
-@router.get("/kafka")
-def health_kafka() -> dict:
-    return health.check_kafka()
-
 
 @router.get("/hdfs")
 def health_hdfs() -> dict:

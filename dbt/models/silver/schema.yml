@@ -1,0 +1,169 @@
+version: 2
+
+models:
+  - name: silver_airports
+    description: "Conformed airport geographic dimension with canonical English translations and parsed coordinate points."
+    columns:
+      - name: airport_code
+        description: "Three-character IATA airport code (Primary Key)."
+        tests:
+          - unique
+          - not_null
+      - name: airport_name
+        description: "English name of the airport."
+        tests:
+          - not_null
+      - name: city
+        description: "English name of the serviced city."
+        tests:
+          - not_null
+      - name: lon
+        description: "WGS84 longitude coordinate in decimal degrees."
+        tests:
+          - not_null
+      - name: lat
+        description: "WGS84 latitude coordinate in decimal degrees."
+        tests:
+          - not_null
+      - name: timezone
+        description: "Timezone identifier string (e.g. Europe/Moscow)."
+        tests:
+          - not_null
+
+  - name: silver_aircrafts
+    description: "Conformed aircraft fleet dimension with parsed English model names."
+    columns:
+      - name: aircraft_code
+        description: "Three-character IATA aircraft code (Primary Key)."
+        tests:
+          - unique
+          - not_null
+      - name: model
+        description: "English aircraft model description."
+        tests:
+          - not_null
+      - name: range
+        description: "Operating range in kilometers."
+        tests:
+          - not_null
+
+  - name: silver_seats
+    description: "Physical cabin configuration and travel classes per aircraft model."
+    columns:
+      - name: aircraft_code
+        description: "Aircraft code referencing silver_aircrafts."
+        tests:
+          - not_null
+      - name: seat_no
+        description: "Assigned cabin seat number."
+        tests:
+          - not_null
+      - name: fare_conditions
+        description: "Travel class: Economy, Comfort, or Business."
+        tests:
+          - not_null
+
+  - name: silver_bookings
+    description: "Deduplicated commercial passenger bookings."
+    columns:
+      - name: book_ref
+        description: "Six-character alphanumeric booking reference (Primary Key)."
+        tests:
+          - unique
+          - not_null
+      - name: book_date
+        description: "Booking creation timestamp."
+        tests:
+          - not_null
+      - name: total_amount
+        description: "Total monetary amount billed (RUB)."
+        tests:
+          - not_null
+
+  - name: silver_tickets
+    description: "Deduplicated passenger tickets with SHA-256 masked PII passenger_key."
+    columns:
+      - name: ticket_no
+        description: "13-digit ticket number (Primary Key)."
+        tests:
+          - unique
+          - not_null
+      - name: book_ref
+        description: "Booking reference foreign key."
+        tests:
+          - not_null
+      - name: passenger_key
+        description: "Irreversible SHA-256 hash of government passenger identity document."
+        tests:
+          - not_null
+
+  - name: silver_flights_enriched
+    description: "Accumulating snapshot fact table joining flights with departure/arrival airport dimensions, aircraft model, Great-Circle distance, local wall-clock times, and delay metrics."
+    columns:
+      - name: flight_id
+        description: "Surrogate integer primary key for flight leg."
+        tests:
+          - unique
+          - not_null
+      - name: flight_no
+        description: "Alphanumeric flight route number."
+        tests:
+          - not_null
+      - name: status
+        description: "Operational flight lifecycle status."
+        tests:
+          - not_null
+      - name: distance_km
+        description: "Calculated Great-Circle Haversine distance in kilometers."
+      - name: dep_delay_min
+        description: "Departure delay relative to scheduled departure in minutes."
+
+  - name: silver_ticket_flights
+    description: "Transaction line items linking tickets to flights."
+    columns:
+      - name: ticket_no
+        description: "Ticket number."
+        tests:
+          - not_null
+      - name: flight_id
+        description: "Flight leg identifier."
+        tests:
+          - not_null
+      - name: fare_conditions
+        description: "Cabin travel class."
+        tests:
+          - not_null
+      - name: amount
+        description: "Flight segment price (RUB)."
+        tests:
+          - not_null
+
+  - name: silver_boarding_passes
+    description: "Airport check-in boarding passes verified against physical cabin seat configuration."
+    columns:
+      - name: ticket_no
+        description: "Ticket number."
+        tests:
+          - not_null
+      - name: flight_id
+        description: "Flight leg identifier."
+        tests:
+          - not_null
+      - name: boarding_no
+        description: "Sequential boarding sequence number."
+        tests:
+          - not_null
+      - name: seat_no
+        description: "Assigned cabin seat number."
+        tests:
+          - not_null
+
+  - name: silver_quarantine
+    description: "Anomalous records quarantined for data quality monitoring."
+    columns:
+      - name: source_table
+        description: "Originating table name of quarantined record."
+      - name: reason
+        description: "Explanation of rule violation."
+      - name: payload
+        description: "JSON serialization of raw anomalous record."

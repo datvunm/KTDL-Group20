@@ -1,25 +1,32 @@
 services:
   mongo:
-    image: mongo
+    image: mongo:7.0
     restart: always
     environment:
-      MONGO_INITDB_ROOT_USERNAME: ${MONGO_INITDB_ROOT_USERNAME}
-      MONGO_INITDB_ROOT_PASSWORD: ${MONGO_INITDB_ROOT_PASSWORD}
+      MONGO_INITDB_ROOT_USERNAME: ${MONGO_INITDB_ROOT_USERNAME:-root}
+      MONGO_INITDB_ROOT_PASSWORD: ${MONGO_INITDB_ROOT_PASSWORD:-123456}
+    volumes:
+      - mongo_data:/data/db
     networks:
       - ktdl-network
 
   mongo-express:
-    image: mongo-express
+    image: mongo-express:1.0.2
     restart: always
     ports:
-      - 8081:8081
+      - "${MONGO_EXPRESS_PORT:-8081}:8081"
     environment:
-      ME_CONFIG_MONGODB_URL: mongodb://${MONGO_INITDB_ROOT_USERNAME}:${MONGO_INITDB_ROOT_PASSWORD}@mongo:27017/
-      ME_CONFIG_BASICAUTH_ENABLED: true
-      ME_CONFIG_BASICAUTH_USERNAME: ${ME_CONFIG_BASICAUTH_USERNAME}
-      ME_CONFIG_BASICAUTH_PASSWORD: ${ME_CONFIG_BASICAUTH_PASSWORD}
+      ME_CONFIG_MONGODB_URL: mongodb://${MONGO_INITDB_ROOT_USERNAME:-root}:${MONGO_INITDB_ROOT_PASSWORD:-123456}@mongo:27017/?authSource=admin
+      ME_CONFIG_BASICAUTH_ENABLED: ${ME_CONFIG_BASICAUTH_ENABLED:-false}
+      ME_CONFIG_BASICAUTH_USERNAME: ${ME_CONFIG_BASICAUTH_USERNAME:-admin}
+      ME_CONFIG_BASICAUTH_PASSWORD: ${ME_CONFIG_BASICAUTH_PASSWORD:-admin}
+    depends_on:
+      - mongo
     networks:
       - ktdl-network
+
+volumes:
+  mongo_data:
 
 networks:
   ktdl-network:

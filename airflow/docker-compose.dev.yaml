@@ -1,0 +1,38 @@
+services:
+  airflow:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: ktdl-airflow:2.10.5
+    hostname: airflow
+    restart: always
+    ports:
+      - "${AIRFLOW_PORT:-8083}:8080"
+    environment:
+      AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: postgresql+psycopg2://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-123456}@db:5432/airflow
+      AIRFLOW__CORE__EXECUTOR: LocalExecutor
+      AIRFLOW__CORE__LOAD_EXAMPLES: "false"
+      AIRFLOW__CORE__DAGS_ARE_PAUSED_AT_CREATION: "false"
+      AIRFLOW_CONN_SPARK_DEFAULT: '{"conn_type":"spark","host":"spark://spark","port":7077,"extra":{"deploy-mode":"client"}}'
+      HADOOP_USER_NAME: ${HADOOP_USER_NAME:-root}
+      AIRFLOW_ADMIN_USERNAME: ${AIRFLOW_ADMIN_USERNAME:-admin}
+      AIRFLOW_ADMIN_PASSWORD: ${AIRFLOW_ADMIN_PASSWORD:-admin}
+      PG_URL: ${PG_URL:-jdbc:postgresql://db:5432/demo}
+      PG_USER: ${PG_USER:-postgres}
+      PG_PASSWORD: ${PG_PASSWORD:-123456}
+      LAKE_WAREHOUSE: ${LAKE_WAREHOUSE:-hdfs://namenode:9000/warehouse}
+      MONGO_URI: ${MONGO_URI:-mongodb://root:123456@mongo:27017/?authSource=admin}
+      MONGO_DB: ${MONGO_DB:-airlines}
+    volumes:
+      - ../pipeline:/opt/pipeline:ro
+      - ./dags:/opt/airflow/dags
+      - airflow_ivy:/opt/airflow/.ivy2
+    networks:
+      - ktdl-network
+
+volumes:
+  airflow_ivy:
+
+networks:
+  ktdl-network:
+    external: true

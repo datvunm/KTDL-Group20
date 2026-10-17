@@ -1,0 +1,52 @@
+{
+  "total_revenue": 47004388200.0,
+  "total_flights": 49235,
+  "total_delayed": 2394,
+  "delay_rate": 0.0486,
+  "avg_load_factor": 0.4285,
+  "total_airports": 104,
+  "total_routes": 100,
+  "total_aircraft": 9,
+  "latest_run": {
+    "_id": "manual__2026_10_04T11_59_13_00_00",
+    "run_id": "manual__2026_10_04T11_59_13_00_00",
+    "cutoff": "2017-08-15T15:00:00+00:00",
+    "started_at": "2026-10-04T11:59:42.888612+00:00",
+    "finished_at": "2026-10-04T12:04:43.358213+00:00",
+    "status": "success",
+    "counts": {
+      "bronze": {
+        "aircrafts_data": 9,
+        "airports_data": 104,
+        "seats": 1339,
+        "flights": 65664,
+        "bookings": 593433,
+        "tickets": 829071,
+        "ticket_flights": 2360335,
+        "boarding_passes": 1894295
+      },
+      "silver": {
+        "airports": 104,
+        "aircrafts": 9,
+        "seats": 1339,
+        "bookings": 593433,
+        "tickets": 829071,
+        "flights_enriched": 65664,
+        "ticket_flights": 2360335,
+        "boarding_passes": 1894295
+      },
+      "gold": {
+        "gold_route_revenue": 3448,
+        "gold_route_pareto": 457,
+        "gold_flight_occupancy": 49293,
+        "gold_fleet": 9,
+        "gold_delay_heatmap": 84,
+        "gold_delay_by_aircraft": 8,
+        "gold_delay_by_route": 532,
+        "dim_airports": 104,
+        "dim_routes": 100
+      }
+    },
+    "quarantine": 0
+  }
+}

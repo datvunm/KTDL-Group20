@@ -1,0 +1,19 @@
+airlines_lakehouse:
+  target: dev
+  outputs:
+    dev:
+      type: duckdb
+      path: ':memory:'
+      schema: main
+    spark:
+      type: spark
+      method: thrift
+      host: "{{ env_var('SPARK_THRIFT_HOST', 'spark') }}"
+      port: "{{ env_var('SPARK_THRIFT_PORT', '10000') | int }}"
+      schema: silver
+      connect_timeout: 60
+      server_side_parameters:
+        spark.sql.catalog.lake: org.apache.iceberg.spark.SparkCatalog
+        spark.sql.catalog.lake.type: hadoop
+        spark.sql.catalog.lake.warehouse: "hdfs://namenode:9000/warehouse"
+        spark.sql.extensions: org.apache.iceberg.spark.extensions.IcebergSparkSessionExtensions

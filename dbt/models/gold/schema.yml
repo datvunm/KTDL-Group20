@@ -1,0 +1,185 @@
+version: 2
+
+models:
+  - name: gold_route_revenue
+    description: "Monthly revenue and passenger ticket volume segmented by route and cabin class."
+    columns:
+      - name: _id
+        description: "Natural compound primary key (dep|arr|month|fare)."
+        tests:
+          - unique
+          - not_null
+      - name: dep_airport
+        description: "Three-letter IATA departure airport code."
+        tests:
+          - not_null
+      - name: arr_airport
+        description: "Three-letter IATA arrival airport code."
+        tests:
+          - not_null
+      - name: month
+        description: "Scheduled flight departure month in UTC (yyyy-MM)."
+        tests:
+          - not_null
+      - name: fare_conditions
+        description: "Cabin travel class: Economy, Comfort, or Business."
+        tests:
+          - not_null
+      - name: revenue
+        description: "Total gross ticket revenue billed for route/month/class in RUB."
+        tests:
+          - not_null
+      - name: tickets
+        description: "Total ticket passenger count."
+        tests:
+          - not_null
+
+  - name: gold_route_pareto
+    description: "Cumulative Pareto 80/20 revenue concentration ranking all directional routes."
+    columns:
+      - name: _id
+        description: "Compound natural key (dep|arr)."
+        tests:
+          - unique
+          - not_null
+      - name: rank
+        description: "Descending revenue rank (1 = highest revenue route)."
+        tests:
+          - not_null
+      - name: revenue
+        description: "Total gross route revenue in RUB."
+        tests:
+          - not_null
+      - name: cum_share
+        description: "Cumulative share of total network revenue (0.0 to 1.0)."
+        tests:
+          - not_null
+      - name: revenue_share
+        description: "Individual route share of total network revenue (0.0 to 1.0)."
+        tests:
+          - not_null
+
+  - name: gold_flight_occupancy
+    description: "Flight-level passenger load factor for completed and departed operations."
+    columns:
+      - name: _id
+        description: "Flight ID as unique string primary key."
+        tests:
+          - unique
+          - not_null
+      - name: flight_id
+        description: "Integer flight leg identifier."
+        tests:
+          - not_null
+      - name: boarded
+        description: "Number of passengers checked in with issued boarding passes."
+        tests:
+          - not_null
+      - name: seats
+        description: "Total physical cabin seats configured on the operating aircraft."
+        tests:
+          - not_null
+      - name: load_factor
+        description: "Seat occupancy ratio (boarded / seats, between 0.0 and 1.0)."
+        tests:
+          - not_null
+
+  - name: gold_fleet
+    description: "Aircraft fleet performance, accumulated flight hours, seat configurations, and utilization."
+    columns:
+      - name: _id
+        description: "Three-letter IATA aircraft model code (Primary Key)."
+        tests:
+          - unique
+          - not_null
+      - name: aircraft_code
+        description: "Aircraft model code."
+        tests:
+          - not_null
+      - name: model
+        description: "Aircraft model name."
+        tests:
+          - not_null
+      - name: flight_hours
+        description: "Cumulative operating flight hours."
+      - name: avg_load_factor
+        description: "Fleet-average seat occupancy ratio."
+
+  - name: gold_delay_heatmap
+    description: "Day-of-week by local departure hour operational congestion matrix."
+    columns:
+      - name: _id
+        description: "Compound key (dow|hour)."
+        tests:
+          - unique
+          - not_null
+      - name: dow
+        description: "ISO day of week (1=Monday to 7=Sunday in local airport departure timezone)."
+        tests:
+          - not_null
+      - name: hour
+        description: "Local departure hour (0 to 23)."
+        tests:
+          - not_null
+      - name: flights
+        description: "Total completed flights in this time window."
+        tests:
+          - not_null
+      - name: delayed
+        description: "Count of flights departing > 15 minutes late."
+        tests:
+          - not_null
+      - name: delay_rate
+        description: "Delay percentage ratio (delayed / flights)."
+        tests:
+          - not_null
+
+  - name: gold_delay_by_aircraft
+    description: "Operational punctuality and turnaround vulnerability segmented by aircraft model."
+    columns:
+      - name: _id
+        description: "Aircraft code."
+        tests:
+          - unique
+          - not_null
+      - name: delay_rate
+        description: "Percentage of flights departing > 15 minutes late."
+      - name: avg_delay_min
+        description: "Average delay in minutes across delayed flights."
+
+  - name: gold_delay_by_route
+    description: "Route-level delay scorecard for routes with at least 20 completed flights."
+    columns:
+      - name: _id
+        description: "Directional route (dep|arr)."
+        tests:
+          - unique
+          - not_null
+      - name: delay_rate
+        description: "Percentage of flights departing > 15 minutes late."
+      - name: avg_delay_min
+        description: "Average delay in minutes across delayed flights."
+
+  - name: dim_airports
+    description: "Master airport dimension with departure volume and WGS84 geographic coordinates."
+    columns:
+      - name: _id
+        description: "Three-letter IATA airport code (Primary Key)."
+        tests:
+          - unique
+          - not_null
+      - name: departures
+        description: "Total commercial flight departures originating at this airport."
+
+  - name: dim_routes
+    description: "Top 100 highest-volume commercial route corridors with endpoint coordinates."
+    columns:
+      - name: _id
+        description: "Route identifier (dep|arr)."
+        tests:
+          - unique
+          - not_null
+      - name: flights
+        description: "Total flight volume operating on this corridor."
+        tests:
+          - not_null

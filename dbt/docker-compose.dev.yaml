@@ -1,0 +1,18 @@
+services:
+  dbt-docs:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: ktdl-dbt-docs:1.0.0
+    hostname: dbt-docs
+    restart: always
+    ports:
+      - "${DBT_DOCS_PORT:-8085}:80"
+    volumes:
+      - ./target:/usr/share/nginx/html:ro
+    networks:
+      - ktdl-network
+
+networks:
+  ktdl-network:
+    external: true
