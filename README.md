@@ -13,7 +13,7 @@ The system implements a Medallion Lakehouse architecture orchestrating data move
 ```mermaid
 flowchart TD
     subgraph Source["Source Layer"]
-        PG[("PostgreSQL (db:5432)<br/>Demo DB & Simulator")]
+        PG[("PostgreSQL (db:5432)<br/>Demo DB: archive & raw<br/>Simulator")]
     end
 
     subgraph Orchestration["Orchestration"]
@@ -33,7 +33,7 @@ flowchart TD
 
     subgraph Serving["Serving & Analytics"]
         MONGO[("MongoDB (mongo:27017)<br/>Database: airlines")]
-        DASH["FastAPI App & Dashboard<br/>Host :8000"]
+        DASH["FastAPI App & Dashboard<br/>Host :8005"]
     end
 
     AF -->|1. check_source| PG
@@ -42,7 +42,7 @@ flowchart TD
     AF -->|4. spark-submit gold| SPARK
     AF -->|5. spark-submit publish| SPARK
 
-    PG -.->|JDBC Read| BRONZE
+    PG -.->|JDBC Read raw.*| BRONZE
     BRONZE --> SILVER
     SILVER --> GOLD
     GOLD -.->|mongo-spark-connector| MONGO
@@ -51,13 +51,14 @@ flowchart TD
 
 ### Data Pipeline Overview
 
-1. **Source & Simulation**: Postgres database `demo` with schema `archive` (full dump) and schema `bookings` (simulated state up to a specified cutoff timestamp).
-2. **Orchestration**: Airflow standalone orchestrates the medallion pipeline DAG `airlines_medallion` (`check_source` → `bronze` → `silver` → `gold` → `publish`).
-3. **Bronze Layer**: Appends newly released data partitioned by ingest day into Iceberg tables (`lake.bronze.*`), tracking ingestion watermarks in `lake.meta.watermarks`.
-4. **Silver Layer**: Cleans, deduplicates with PK merge, enriches flight durations/delays/routes, and quarantines invalid records into `lake.silver.quarantine`.
-5. **Gold Layer**: Computes analytical marts with official domain metrics (revenue, Pareto share, flight occupancy, fleet utilization, route delays, delay heatmaps).
-6. **Publish Layer**: Exports Gold marts to MongoDB collections with upsert and run-tracking metadata (`pipeline_runs`).
-7. **Dashboard**: FastAPI service serving interactive dashboards (Leaflet route map, delay heatmaps, revenue charts) and JSON REST endpoints.
+1. **Raw Source Data**: The official demo dump, already converted into 3 denormalized raw tables ([`source/build_raw.sql`](source/build_raw.sql)) and committed in [`source/data/raw/`](source/data/raw): `flight_seat_reservations` (one row per seat per flight + unseated bookings), `airport_sites`, `aircraft_seat_layouts`.
+2. **Source & Simulation**: Postgres database `demo` with schema `archive` (full history of the 3 raw tables) and schema `raw` (the same tables as of a simulation cutoff, `raw.now()`).
+3. **Orchestration**: Airflow standalone orchestrates the medallion pipeline DAG `airlines_medallion` (`check_source` → `bronze` → `silver` → `gold` → `publish`).
+4. **Bronze Layer**: Appends a full snapshot of the 3 raw tables per run into Iceberg (`lake.bronze.*`), partitioned by ingest day and batch, recording the loaded cutoff in `lake.meta.watermarks`.
+5. **Silver Layer**: Splits the 3 raw tables back into the 8 normalized entities (airports, aircrafts, seats, bookings, tickets, flights_enriched, ticket_flights, boarding_passes) with distinct-per-key extraction, PK merge, enrichment of flight durations/delays/routes, and quarantine of conflicting or invalid records into `lake.silver.quarantine`.
+6. **Gold Layer**: Computes analytical marts with official domain metrics (revenue, Pareto share, flight occupancy, fleet utilization, route delays, delay heatmaps).
+7. **Publish Layer**: Exports Gold marts to MongoDB collections with upsert and run-tracking metadata (`pipeline_runs`).
+8. **Dashboard**: FastAPI service serving interactive dashboards (Leaflet route map, delay heatmaps, revenue charts) and JSON REST endpoints.
 
 ---
 
@@ -67,7 +68,7 @@ All services join the shared external Docker network `ktdl-network`. Host ports 
 
 | Container | Host port | Internal port | Description |
 |---|---|---|---|
-| `db` (PostgreSQL 16) | _Not published_ | 5432 | Primary OLTP database (`demo` and `airflow` DBs) |
+| `db` (PostgreSQL 16) | 5432 | 5432 | Primary OLTP database (`demo` and `airflow` DBs) |
 | `adminer` | 8082 | 8080 | Web UI for PostgreSQL database management |
 | `mongo` (MongoDB 7.0) | _Not published_ | 27017 | Serving document store (`airlines` database) |
 | `mongo-express` | 8081 | 8081 | Web UI for MongoDB database management |
@@ -92,17 +93,17 @@ Follow this step-by-step runbook to run the full end-to-end integration:
 ```
 This script ensures `ktdl-network` exists, boots all Docker Compose stacks, and verifies container-to-container connectivity.
 
-### 2. Download and load the Postgres demo database
+### 2. Load the Postgres demo database
 ```bash
 ./source/load_dump.sh
 ```
-Downloads the medium Postgres demo dump (`demo-medium-en-20170815.sql`) into `source/data/`, creates the `demo` database with `archive` and empty `bookings` schemas, and populates initial simulation state.
+Restores the committed raw dump (`source/data/raw/`) into schema `archive` of a fresh `demo` database, creates the empty `raw` schema, and populates initial simulation state.
 
 ### 3. Advance the simulation cutoff to 2017-06-15
 ```bash
 ./source/simulate.sh 2017-06-15
 ```
-Populates `bookings` tables up to `2017-06-15`, printing table row counts and flight status distribution.
+Populates the `raw` tables as of `2017-06-15`, printing table row counts and flight status distribution.
 
 ### 4. Trigger the medallion pipeline DAG
 - **Via Web UI**: Open [http://localhost:8083](http://localhost:8083) (login: `admin` / `admin`), unpause and trigger `airlines_medallion`.
@@ -149,8 +150,7 @@ docker compose -f airflow/docker-compose.dev.yaml exec airflow airflow dags trig
 Verify the following acceptance benchmarks locally after running the pipeline through the final cutoff (`2017-08-15 18:00:00+03`):
 
 - **Data Integrity**:
-  - Row counts across all 8 tables in schema `bookings` equal schema `archive`.
-  - Query `archive.flights EXCEPT bookings.flights` returns 0 rows.
+  - All 3 tables in schema `raw` equal schema `archive` (`EXCEPT ALL` both ways returns 0 rows).
 - **Flight Volume**:
   - Exactly **49,235** Arrived flights in the dataset.
   - **2,394** delayed flights (> 15 minutes departure delay).
@@ -158,13 +158,14 @@ Verify the following acceptance benchmarks locally after running the pipeline th
   - Boeing 777-300 load factor ≈ **72.8%**.
   - Cessna 208 Caravan load factor ≈ **16.0%**.
 - **Route Revenue & Pareto Distribution**:
-  - Total revenue ≈ **37.7B RUB** across **451** revenue routes.
-  - Top **38** routes account for **50%** of total revenue.
+  - Total revenue ≈ **47.0B RUB** across **457** revenue routes.
+  - Top **39** routes account for **50%** of total revenue.
 - **Delay Hotspots**:
-  - Voronezh (VOZ) → Pulkovo (LED): **11.1%** delay rate over 90 scheduled flights.
+  - Voronezh (VOZ) → Pulkovo (LED): **11.1%** delay rate over 90 arrived flights.
 
 ### System Requirements & Notes
-- **Host Ports Free**: Ensure host ports `8000` (FastAPI), `8080` (Spark UI), `8081` (Mongo Express), `8082` (Adminer), `8083` (Airflow), and `9870` (NameNode UI) are not bound by host processes before launching.
+- **Host Ports Free**: Ensure host ports `5432` (PostgreSQL), `8005` (FastAPI), `8080` (Spark UI), `8081` (Mongo Express), `8082` (Adminer), `8083` (Airflow), and `9870` (NameNode UI) are not bound by host processes before launching.
 - **Memory**: Docker daemon should have at least **6–7 GB RAM** allocated for all services to operate reliably.
 - **Dependency Management**: When updating dependencies in `service-main`, run `uv lock` inside `service-main` locally.
+- **Raw Dump**: `source/data/raw/` is committed (about 242 MB of gzip parts). To regenerate it from the official dump, run `./source/export_raw_dump.sh` (see [source/README.md](source/README.md)).
 - **PostgreSQL Initialization**: Postgres initialization scripts in `postgres/init/` (which pre-creates the `airflow` database) only execute when the database data directory is empty. When resetting the environment, remove the Postgres data volume (`docker volume rm postgres_postgres_data` or `docker compose ... down -v`) to ensure clean database initialization.

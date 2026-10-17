@@ -32,8 +32,10 @@ def test_task_order():
     tasks = ["check_source", "bronze", "silver", "gold", "publish"]
     for task_id in tasks:
         assert dag.has_task(task_id), f"Missing task {task_id}"
+    assert sorted(dag.task_ids) == sorted(tasks)
 
-    # Verify linear dependency chain: check_source -> bronze -> silver -> gold -> publish
+    # Verify linear dependency chain:
+    # check_source -> bronze -> silver -> gold -> publish
     assert dag.get_task("bronze") in dag.get_task("check_source").downstream_list
     assert dag.get_task("silver") in dag.get_task("bronze").downstream_list
     assert dag.get_task("gold") in dag.get_task("silver").downstream_list
