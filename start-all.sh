@@ -13,6 +13,7 @@ stacks=(
   "spark/docker-compose.dev.yaml"
   "airflow/docker-compose.dev.yaml"
   "service-main/docker-compose.dev.yaml"
+  "dbt/docker-compose.dev.yaml"
 )
 
 # host:port targets to validate once everything is up
@@ -27,6 +28,7 @@ targets=(
   "spark-worker:8081"
   "airflow:8080"
   "app:8000"
+  "dbt-docs:80"
 )
 
 echo "--- Ensuring shared network '$network' exists"

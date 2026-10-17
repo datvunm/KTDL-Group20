@@ -820,6 +820,10 @@
 
   // Init
   document.addEventListener("DOMContentLoaded", () => {
+    const dbtLink = document.getElementById("dbt-docs-link");
+    if (dbtLink && window.location.hostname) {
+      dbtLink.href = `${window.location.protocol}//${window.location.hostname}:8085`;
+    }
     setupEvents();
     loadAllData();
   });

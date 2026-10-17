@@ -77,9 +77,9 @@ All services join the shared external Docker network `ktdl-network`. Host ports 
 | `spark` (Master 3.5.9) | 8080 | 7077 (RPC), 8080 (HTTP) | Apache Spark master node and cluster UI |
 | `spark-worker` (Worker 3.5.9) | _Not published_ | 8081 (HTTP) | Apache Spark worker (2 cores, 2 GB RAM) |
 | `airflow` (Airflow 2.10.5) | 8083 | 8080 (HTTP) | Airflow standalone (webserver, scheduler, triggerer) |
-| `app` (FastAPI service-main) | 8005 | 8000 (HTTP) | Analytical API and interactive dashboard |
-
-> **Security & Isolation Note**: Internal ports for `mongo` (27017), `spark:7077` (Spark RPC), and `namenode:9000` (HDFS RPC) are intentionally not published to the host to avoid host port collisions. They are reachable internally across services on `ktdl-network`.
+| `app` (FastAPI service-main) | 8000 | 8000 (HTTP) | Analytical API and interactive dashboard |
+| `dbt-docs` (Nginx dbt docs) | 8085 | 80 (HTTP) | Interactive dbt data lineage DAG and documentation UI |
+> **Security & Isolation Note**: Internal ports for `db` (5432), `mongo` (27017), `spark:7077` (Spark RPC), and `namenode:9000` (HDFS RPC) are intentionally not published to the host to avoid host port collisions. They are reachable internally across services on `ktdl-network`.
 
 ---
 
@@ -113,12 +113,16 @@ Populates the `raw` tables as of `2017-06-15`, printing table row counts and fli
   ```
 The DAG executes sequentially: `check_source` → `bronze` → `silver` → `gold` → `publish`.
 
-### 5. View metrics on the dashboard
-Open [http://localhost:8005](http://localhost:8005) to view:
+### 5. View metrics on the dashboard & explore data lineage
+Open [http://localhost:8000](http://localhost:8000) to view:
 - Route revenue and Pareto distribution
 - Airport departure traffic and top route maps
 - Delay heatmaps (Day of Week × Departure Hour)
 - Aircraft fleet load factors and performance
+
+Open [http://localhost:8085](http://localhost:8085) (or click the **📊 Data Lineage (dbt docs)** link in the dashboard header) to explore:
+- Interactive column-level data lineage graph (DAG) across Bronze, Silver, and Gold layers
+- Schema tests, column descriptions, and model definitions
 
 > 📊 **Dashboard Guide & Analysis**: See [System Design & Dashboard: Section 4](docs/SYSTEM_DESIGN_AND_DASHBOARD.md#4-dashboard-walkthrough--business-intelligence) for an exhaustive breakdown of what evaluators see on each tab (Overview, Map, Delays, Revenue, Fleet, Pipeline), underlying business meaning, and official benchmark acceptance figures.
 

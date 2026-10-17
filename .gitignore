@@ -77,6 +77,14 @@ docs/_build/
 # PyBuilder
 .pybuilder/
 target/
+!dbt/target/
+dbt/target/*
+!dbt/target/index.html
+!dbt/target/manifest.json
+!dbt/target/catalog.json
+!dbt/target/graph_summary.json
+!dbt/target/run_results.json
+.user.yml
 
 # Jupyter Notebook
 .ipynb_checkpoints
