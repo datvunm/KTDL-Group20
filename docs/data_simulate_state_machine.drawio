@@ -1,0 +1,104 @@
+<mxfile host="65bd71144e">
+    <diagram id="iSs5hB3YjTC60J0z7crV" name="Page-1">
+        <mxGraphModel dx="1012" dy="453" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="850" pageHeight="1100" math="0" shadow="0">
+            <root>
+                <mxCell id="0"/>
+                <mxCell id="1" parent="0"/>
+                <mxCell id="67M2WNaMyyoiASgia1er-1" parent="1" style="whiteSpace=wrap;html=1;" value="Cancelled" vertex="1">
+                    <mxGeometry height="60" width="120" x="600" y="200" as="geometry"/>
+                </mxCell>
+                <mxCell id="67M2WNaMyyoiASgia1er-2" parent="1" style="whiteSpace=wrap;html=1;" value="Released" vertex="1">
+                    <mxGeometry height="60" width="120" x="320" y="200" as="geometry"/>
+                </mxCell>
+                <mxCell id="67M2WNaMyyoiASgia1er-3" parent="1" style="whiteSpace=wrap;html=1;" value="Arrived" vertex="1">
+                    <mxGeometry height="60" width="120" x="320" y="880" as="geometry"/>
+                </mxCell>
+                <mxCell id="67M2WNaMyyoiASgia1er-4" parent="1" style="whiteSpace=wrap;html=1;" value="Departed" vertex="1">
+                    <mxGeometry height="60" width="120" x="320" y="740" as="geometry"/>
+                </mxCell>
+                <mxCell id="B81dzzHrQm17VBSnmEP2-9" edge="1" parent="1" source="67M2WNaMyyoiASgia1er-2" style="edgeStyle=none;html=1;" target="67M2WNaMyyoiASgia1er-1">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="B81dzzHrQm17VBSnmEP2-10" connectable="0" parent="B81dzzHrQm17VBSnmEP2-9" style="edgeLabel;html=1;align=center;verticalAlign=middle;resizable=0;points=[];" value="if status == cancelled" vertex="1">
+                    <mxGeometry relative="1" x="0.0462" as="geometry">
+                        <mxPoint x="-3" as="offset"/>
+                    </mxGeometry>
+                </mxCell>
+                <mxCell id="B81dzzHrQm17VBSnmEP2-13" edge="1" parent="1" source="B81dzzHrQm17VBSnmEP2-16" style="edgeStyle=none;html=1;" target="67M2WNaMyyoiASgia1er-4">
+                    <mxGeometry relative="1" as="geometry">
+                        <mxPoint x="610" y="780" as="sourcePoint"/>
+                    </mxGeometry>
+                </mxCell>
+                <mxCell id="B81dzzHrQm17VBSnmEP2-23" connectable="0" parent="B81dzzHrQm17VBSnmEP2-13" style="edgeLabel;html=1;align=center;verticalAlign=middle;resizable=0;points=[];" value="actual_departure &amp;lt;= cut_off" vertex="1">
+                    <mxGeometry relative="1" x="-0.1035" as="geometry">
+                        <mxPoint x="-5" y="4" as="offset"/>
+                    </mxGeometry>
+                </mxCell>
+                <mxCell id="sanityFix-gate" edge="1" parent="1" style="edgeStyle=none;html=1;" target="67M2WNaMyyoiASgia1er-2">
+                    <mxGeometry relative="1" as="geometry">
+                        <mxPoint x="380" y="100" as="sourcePoint"/>
+                    </mxGeometry>
+                </mxCell>
+                <mxCell id="sanityFix-gate-label" connectable="0" parent="sanityFix-gate" style="edgeLabel;html=1;align=center;verticalAlign=middle;resizable=0;points=[];" value="scheduled_departure &amp;lt;= cut_off + 31 days&lt;br&gt;OR booking book_date &amp;lt;= cut_off" vertex="1">
+                    <mxGeometry relative="1" y="-10" as="geometry">
+                        <mxPoint as="offset"/>
+                    </mxGeometry>
+                </mxCell>
+                <mxCell id="sanityFix-released-scheduled" edge="1" parent="1" source="67M2WNaMyyoiASgia1er-2" style="edgeStyle=none;html=1;" target="B81dzzHrQm17VBSnmEP2-15">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="sanityFix-released-scheduled-label" connectable="0" parent="sanityFix-released-scheduled" style="edgeLabel;html=1;align=center;verticalAlign=middle;resizable=0;points=[];" value="if status != cancelled" vertex="1">
+                    <mxGeometry relative="1" as="geometry">
+                        <mxPoint as="offset"/>
+                    </mxGeometry>
+                </mxCell>
+                <mxCell id="B81dzzHrQm17VBSnmEP2-20" edge="1" parent="1" source="B81dzzHrQm17VBSnmEP2-15" style="edgeStyle=none;html=1;" target="B81dzzHrQm17VBSnmEP2-16">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="B81dzzHrQm17VBSnmEP2-22" connectable="0" parent="B81dzzHrQm17VBSnmEP2-20" style="edgeLabel;html=1;align=center;verticalAlign=middle;resizable=0;points=[];" value="scheduled_departure - 24h &amp;lt;= cut_off AS checkin_open" vertex="1">
+                    <mxGeometry relative="1" x="-0.1264" y="-2" as="geometry">
+                        <mxPoint x="74" y="-47" as="offset"/>
+                    </mxGeometry>
+                </mxCell>
+                <mxCell id="aXTdHliUKetlqd47L6je-1" connectable="0" parent="B81dzzHrQm17VBSnmEP2-20" style="edgeLabel;html=1;align=center;verticalAlign=middle;resizable=0;points=[];" value="checkin_open AND NOT delayed" vertex="1">
+                    <mxGeometry relative="1" x="0.1118" y="1" as="geometry">
+                        <mxPoint as="offset"/>
+                    </mxGeometry>
+                </mxCell>
+                <mxCell id="B81dzzHrQm17VBSnmEP2-21" edge="1" parent="1" source="B81dzzHrQm17VBSnmEP2-15" style="edgeStyle=none;html=1;" target="B81dzzHrQm17VBSnmEP2-17">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="aXTdHliUKetlqd47L6je-2" connectable="0" parent="B81dzzHrQm17VBSnmEP2-21" style="edgeLabel;html=1;align=center;verticalAlign=middle;resizable=0;points=[];" value="checkin_open AND&lt;br&gt;(status == &quot;Delayed&quot;&lt;br&gt;OR actual_departure &amp;gt; scheduled_departure)" vertex="1">
+                    <mxGeometry relative="1" x="0.107" as="geometry">
+                        <mxPoint x="43" y="10" as="offset"/>
+                    </mxGeometry>
+                </mxCell>
+                <mxCell id="B81dzzHrQm17VBSnmEP2-15" parent="1" style="whiteSpace=wrap;html=1;" value="Scheduled" vertex="1">
+                    <mxGeometry height="60" width="120" x="320" y="360" as="geometry"/>
+                </mxCell>
+                <mxCell id="B81dzzHrQm17VBSnmEP2-16" parent="1" style="whiteSpace=wrap;html=1;" value="On time" vertex="1">
+                    <mxGeometry height="60" width="120" x="160" y="600" as="geometry"/>
+                </mxCell>
+                <mxCell id="aXTdHliUKetlqd47L6je-4" edge="1" parent="1" source="B81dzzHrQm17VBSnmEP2-17" style="rounded=0;orthogonalLoop=1;jettySize=auto;html=1;" target="67M2WNaMyyoiASgia1er-4">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="sanityFix-delayed-departed-label" connectable="0" parent="aXTdHliUKetlqd47L6je-4" style="edgeLabel;html=1;align=center;verticalAlign=middle;resizable=0;points=[];" value="actual_departure &amp;lt;= cut_off" vertex="1">
+                    <mxGeometry relative="1" as="geometry">
+                        <mxPoint as="offset"/>
+                    </mxGeometry>
+                </mxCell>
+                <mxCell id="B81dzzHrQm17VBSnmEP2-17" parent="1" style="whiteSpace=wrap;html=1;" value="Delayed" vertex="1">
+                    <mxGeometry height="60" width="120" x="480" y="600" as="geometry"/>
+                </mxCell>
+                <mxCell id="B81dzzHrQm17VBSnmEP2-28" edge="1" parent="1" source="67M2WNaMyyoiASgia1er-4" style="edgeStyle=none;html=1;" target="67M2WNaMyyoiASgia1er-3">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="B81dzzHrQm17VBSnmEP2-29" connectable="0" parent="B81dzzHrQm17VBSnmEP2-28" style="edgeLabel;html=1;align=center;verticalAlign=middle;resizable=0;points=[];" value="actual_arrival &amp;lt;= cut_off" vertex="1">
+                    <mxGeometry relative="1" x="-0.05" y="2" as="geometry">
+                        <mxPoint as="offset"/>
+                    </mxGeometry>
+                </mxCell>
+            </root>
+        </mxGraphModel>
+    </diagram>
+</mxfile>
