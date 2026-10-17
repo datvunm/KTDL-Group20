@@ -31,14 +31,23 @@ pipeline/
 ├── silver.py                # Silver transforms with quarantine routing & MERGE
 ├── gold.py                  # Gold marts aggregation & snapshot expiration
 ├── publish.py               # Gold publishing to Mongo & driver metadata/indexes
+├── stream_main.py           # Runs stream_bookings.py + stream_flights.py as one Spark app
+├── stream_bookings.py       # Kafka booking.created -> bronze + silver (bookings/tickets/ticket_flights)
+├── stream_flights.py        # Kafka flight.departed/arrived -> bronze + silver flights_enriched
 ├── sql/
 │   ├── silver/              # Numbered Silver DDL & MERGE scripts (00 to 08), raw -> entities
-│   └── gold/                # Gold mart CREATE OR REPLACE TABLE AS SELECT scripts
+│   ├── gold/                # Gold mart CREATE OR REPLACE TABLE AS SELECT scripts
+│   ├── stream_bookings/     # Same pattern as sql/silver/, run per Kafka micro-batch
+│   └── stream_flights/      # Same pattern as sql/silver/, run per Kafka micro-batch
 ├── tests/
 │   ├── __init__.py
 │   └── test_layers.py       # Comprehensive pytest suite on synthetic data
 └── README.md
 ```
+
+## Streaming
+
+`stream_main.py` runs two Structured Streaming queries in one Spark app (compose service `spark-stream`): one consumes `booking.created`, the other `flight.departed`/`flight.arrived`. Producers live in `kafka/producer/`. See `docs/PIPELINE.md` for how it fits with the batch path, and `start-streaming.sh` to run it.
 
 ## Invocations
 

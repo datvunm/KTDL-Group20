@@ -9,6 +9,7 @@
     airports: [],
     routes: [],
     runs: [],
+    liveBookings: null,
     marts: {},
     mapInstance: null,
     mapInitialized: false,
@@ -761,6 +762,83 @@
     });
   }
 
+  // 7. Live Booking Stream (polled separately from loadAllData)
+  async function pollLiveBookings() {
+    const data = await fetchJson("/api/live/bookings?minutes=20");
+    if (!data) return;
+    state.liveBookings = data;
+    renderLiveBookings();
+  }
+
+  function renderLiveBookings() {
+    const data = state.liveBookings;
+    if (!data) return;
+
+    const setText = (id, val) => {
+      const el = document.getElementById(id);
+      if (el) el.textContent = val;
+    };
+    setText("kpi-live-bookings", formatNumber(data.total_bookings));
+    setText("kpi-live-revenue", formatCurrency(data.total_revenue));
+
+    const pulse = document.getElementById("live-pulse");
+    if (pulse) {
+      const active = data.buckets.length > 0 && data.buckets[data.buckets.length - 1].bookings > 0;
+      pulse.className = `badge badge-${active ? "success" : "warning"}`;
+    }
+
+    if (typeof Chart === "undefined" || !document.getElementById("chart-live-bookings")) return;
+
+    const labels = data.buckets.map((b) =>
+      new Date(b.minute).toLocaleTimeString("en-US", { hour: "2-digit", minute: "2-digit" })
+    );
+    const counts = data.buckets.map((b) => b.bookings);
+
+    if (state.charts.liveBookings) {
+      // update in place, no destroy/recreate flash every 5s
+      state.charts.liveBookings.data.labels = labels;
+      state.charts.liveBookings.data.datasets[0].data = counts;
+      state.charts.liveBookings.update();
+      return;
+    }
+
+    const ctx = document.getElementById("chart-live-bookings").getContext("2d");
+    state.charts.liveBookings = new Chart(ctx, {
+      type: "bar",
+      data: {
+        labels: labels,
+        datasets: [
+          {
+            label: "Bookings / minute",
+            data: counts,
+            backgroundColor: "rgba(52, 211, 153, 0.7)",
+            borderColor: "#34d399",
+            borderWidth: 1,
+          },
+        ],
+      },
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        animation: { duration: 300 },
+        scales: {
+          y: {
+            beginAtZero: true,
+            ticks: { color: "#94a3b8", precision: 0 },
+            grid: { color: "#334155" },
+          },
+          x: {
+            ticks: { color: "#94a3b8" },
+            grid: { display: false },
+          },
+        },
+        plugins: {
+          legend: { display: false },
+        },
+      },
+    });
+  }
+
   // Event Listeners & Tab Switching
   function setupEvents() {
     document.querySelectorAll(".tab-btn").forEach((btn) => {
@@ -826,5 +904,7 @@
     }
     setupEvents();
     loadAllData();
+    pollLiveBookings();
+    setInterval(pollLiveBookings, 5000);
   });
 })();

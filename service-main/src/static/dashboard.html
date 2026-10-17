@@ -289,6 +289,30 @@
 
         <div class="tab-data">
           <div class="card">
+            <div class="card-title">
+              <span>Live Booking Stream <span id="live-pulse" class="badge badge-success" style="margin-left: 6px;">●</span></span>
+              <span style="font-size: 0.8rem; color: var(--text-muted); font-weight: normal;">
+                Kafka &rarr; Spark Structured Streaming &rarr; Mongo &bull; updates every 5s &bull; last 20 real minutes
+              </span>
+            </div>
+            <div class="kpi-grid" style="margin-bottom: 1rem;">
+              <div class="kpi-card">
+                <div class="kpi-title">Bookings (last 20 min)</div>
+                <div class="kpi-value" id="kpi-live-bookings">0</div>
+                <div class="kpi-sub">Processed by the booking stream</div>
+              </div>
+              <div class="kpi-card">
+                <div class="kpi-title">Revenue (last 20 min)</div>
+                <div class="kpi-value" id="kpi-live-revenue">0 ₽</div>
+                <div class="kpi-sub">From streamed bookings only</div>
+              </div>
+            </div>
+            <div class="chart-container" style="height: 220px;">
+              <canvas id="chart-live-bookings"></canvas>
+            </div>
+          </div>
+
+          <div class="card">
             <div class="card-title">Latest 20 Pipeline Medallion Ingestion Runs</div>
             <div class="table-responsive">
               <table id="table-pipeline">

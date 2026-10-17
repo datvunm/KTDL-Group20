@@ -5,7 +5,7 @@ A Medallion Lakehouse platform built with PostgreSQL, Apache Spark, Apache Icebe
 ---
 
 ## Architecture
-> 📘 **Detailed Technical Reference**: For complete technical specifications covering container topology, simulation mechanics, Iceberg layer transformations, and data engineering patterns, see [System Design & Dashboard Documentation](docs/SYSTEM_DESIGN_AND_DASHBOARD.md).
+> 📘 **Technical reference**: [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for container topology and ports, [docs/PIPELINE.md](docs/PIPELINE.md) for the simulator and Bronze/Silver/Gold/Publish/streaming logic.
 
 
 The system implements a Medallion Lakehouse architecture orchestrating data movement from a relational OLTP database through raw, curated, and analytical layers:
@@ -124,7 +124,7 @@ Open [http://localhost:8085](http://localhost:8085) (or click the **📊 Data Li
 - Interactive column-level data lineage graph (DAG) across Bronze, Silver, and Gold layers
 - Schema tests, column descriptions, and model definitions
 
-> 📊 **Dashboard Guide & Analysis**: See [System Design & Dashboard: Section 4](docs/SYSTEM_DESIGN_AND_DASHBOARD.md#4-dashboard-walkthrough--business-intelligence) for an exhaustive breakdown of what evaluators see on each tab (Overview, Map, Delays, Revenue, Fleet, Pipeline), underlying business meaning, and official benchmark acceptance figures.
+> 📊 **Dashboard Guide**: See [docs/DASHBOARD.md](docs/DASHBOARD.md) for what each tab shows, metric sources, and benchmark acceptance figures.
 
 ### 6. Repeat with subsequent cutoffs
 Advance the cutoff to observe incremental processing:

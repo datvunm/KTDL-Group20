@@ -6,79 +6,58 @@ services:
     ports:
       - "9092"
     environment:
-      # KRaft settings (CLUSTER_ID omitted on purpose: all three nodes fall
-      # back to the same built-in default, which keeps them in one cluster)
+      # KRaft settings, single node: this broker is also its own controller.
       - KAFKA_NODE_ID=0
       - KAFKA_PROCESS_ROLES=controller,broker
-      - KAFKA_CONTROLLER_QUORUM_VOTERS=0@kafka-0:9093,1@kafka-1:9093,2@kafka-2:9093
+      - KAFKA_CONTROLLER_QUORUM_VOTERS=0@kafka-0:9093
       # Listeners
       - KAFKA_LISTENERS=PLAINTEXT://:9092,CONTROLLER://:9093
       - KAFKA_ADVERTISED_LISTENERS=PLAINTEXT://kafka-0:9092
       - KAFKA_LISTENER_SECURITY_PROTOCOL_MAP=PLAINTEXT:PLAINTEXT,CONTROLLER:PLAINTEXT
       - KAFKA_CONTROLLER_LISTENER_NAMES=CONTROLLER
       - KAFKA_INTER_BROKER_LISTENER_NAME=PLAINTEXT
-      # Clustering
-      - KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR=3
-      - KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR=3
-      - KAFKA_TRANSACTION_STATE_LOG_MIN_ISR=2
+      # Single-node cluster: one broker can't satisfy a replication factor > 1.
+      - KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR=1
+      - KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR=1
+      - KAFKA_TRANSACTION_STATE_LOG_MIN_ISR=1
       - KAFKA_LOG_DIRS=/opt/kafka/data
+      - KAFKA_AUTO_CREATE_TOPICS_ENABLE=true
     volumes:
       - kafka_0_data:/opt/kafka/data
     networks:
       - ktdl-network
-  kafka-1:
-    image: apache/kafka:latest
-    hostname: kafka-1
-    user: root
-    ports:
-      - "9092"
+
+  # Runs once and exits. Re-run: docker compose run --rm booking-producer
+  booking-producer:
+    build: ./producer
+    hostname: booking-producer
+    restart: "no"
     environment:
-      - KAFKA_NODE_ID=1
-      - KAFKA_PROCESS_ROLES=controller,broker
-      - KAFKA_CONTROLLER_QUORUM_VOTERS=0@kafka-0:9093,1@kafka-1:9093,2@kafka-2:9093
-      - KAFKA_LISTENERS=PLAINTEXT://:9092,CONTROLLER://:9093
-      - KAFKA_ADVERTISED_LISTENERS=PLAINTEXT://kafka-1:9092
-      - KAFKA_LISTENER_SECURITY_PROTOCOL_MAP=PLAINTEXT:PLAINTEXT,CONTROLLER:PLAINTEXT
-      - KAFKA_CONTROLLER_LISTENER_NAMES=CONTROLLER
-      - KAFKA_INTER_BROKER_LISTENER_NAME=PLAINTEXT
-      - KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR=3
-      - KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR=3
-      - KAFKA_TRANSACTION_STATE_LOG_MIN_ISR=2
-      - KAFKA_LOG_DIRS=/opt/kafka/data
-    volumes:
-      - kafka_1_data:/opt/kafka/data
+      PG_HOST: ${PG_HOST:-db}
+      PG_PASSWORD: ${PG_PASSWORD:-123456}
+      KAFKA_BOOTSTRAP: ${KAFKA_BOOTSTRAP:-kafka-0:9092}
+      SPEED_FACTOR: ${SPEED_FACTOR:-4000}
+      LIMIT_BOOKINGS: ${LIMIT_BOOKINGS:-}
     networks:
       - ktdl-network
-  kafka-2:
-    image: apache/kafka:latest
-    hostname: kafka-2
-    user: root
-    ports:
-      - "9092"
+
+  # Runs once and exits. Re-run: docker compose run --rm flight-producer
+  flight-producer:
+    build: ./producer
+    hostname: flight-producer
+    restart: "no"
+    command: ["python", "flight_producer.py"]
     environment:
-      - KAFKA_NODE_ID=2
-      - KAFKA_PROCESS_ROLES=controller,broker
-      - KAFKA_CONTROLLER_QUORUM_VOTERS=0@kafka-0:9093,1@kafka-1:9093,2@kafka-2:9093
-      - KAFKA_LISTENERS=PLAINTEXT://:9092,CONTROLLER://:9093
-      - KAFKA_ADVERTISED_LISTENERS=PLAINTEXT://kafka-2:9092
-      - KAFKA_LISTENER_SECURITY_PROTOCOL_MAP=PLAINTEXT:PLAINTEXT,CONTROLLER:PLAINTEXT
-      - KAFKA_CONTROLLER_LISTENER_NAMES=CONTROLLER
-      - KAFKA_INTER_BROKER_LISTENER_NAME=PLAINTEXT
-      - KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR=3
-      - KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR=3
-      - KAFKA_TRANSACTION_STATE_LOG_MIN_ISR=2
-      - KAFKA_LOG_DIRS=/opt/kafka/data
-    volumes:
-      - kafka_2_data:/opt/kafka/data
+      PG_HOST: ${PG_HOST:-db}
+      PG_PASSWORD: ${PG_PASSWORD:-123456}
+      KAFKA_BOOTSTRAP: ${KAFKA_BOOTSTRAP:-kafka-0:9092}
+      SPEED_FACTOR: ${SPEED_FACTOR:-4000}
+      LIMIT_FLIGHTS: ${LIMIT_FLIGHTS:-}
     networks:
       - ktdl-network
 
 volumes:
   kafka_0_data:
-    driver: local
-  kafka_1_data:
-    driver: local
-  kafka_2_data:
     driver: local
 
 networks:
