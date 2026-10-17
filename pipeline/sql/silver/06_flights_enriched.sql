@@ -1,42 +1,4 @@
--- Silver Flights Enriched with Quarantine Handling
-CREATE TABLE IF NOT EXISTS lake.silver.quarantine (
-  source_table string,
-  reason string,
-  payload string,
-  _batch_id string,
-  _ingest_ts timestamp
-) USING iceberg;
-
--- Quarantine bad flights
-INSERT INTO lake.silver.quarantine
-SELECT
-  'flights' AS source_table,
-  CASE
-    WHEN actual_arrival IS NOT NULL AND actual_departure IS NOT NULL AND actual_arrival <= actual_departure
-      THEN 'actual_arrival <= actual_departure'
-    WHEN status NOT IN ('On Time', 'Delayed', 'Departed', 'Arrived', 'Scheduled', 'Cancelled')
-      THEN 'invalid_status'
-    ELSE 'unknown'
-  END AS reason,
-  to_json(struct(
-    flight_id, flight_no, scheduled_departure, scheduled_arrival,
-    departure_airport, arrival_airport, status, aircraft_code,
-    actual_departure, actual_arrival
-  )) AS payload,
-  '${run_id}' AS _batch_id,
-  current_timestamp() AS _ingest_ts
-FROM (
-  SELECT *,
-    row_number() OVER (PARTITION BY flight_id ORDER BY _ingest_ts DESC) AS rn
-  FROM lake.bronze.flights
-  WHERE _batch_id = '${run_id}'
-)
-WHERE rn = 1
-  AND (
-    (actual_arrival IS NOT NULL AND actual_departure IS NOT NULL AND actual_arrival <= actual_departure)
-    OR (status NOT IN ('On Time', 'Delayed', 'Departed', 'Arrived', 'Scheduled', 'Cancelled'))
-  );
-
+-- Silver Flights Enriched (from raw flight_seat_reservations: every row carries its flight)
 CREATE TABLE IF NOT EXISTS lake.silver.flights_enriched (
   flight_id int,
   flight_no string,
@@ -68,10 +30,55 @@ CREATE TABLE IF NOT EXISTS lake.silver.flights_enriched (
 ) USING iceberg
 PARTITIONED BY (months(scheduled_departure));
 
+-- A flight repeats on every seat row and unseated booking row; collapse to one
+-- row per flight_id and validate it against the reference dimensions
+CREATE OR REPLACE TEMPORARY VIEW flights_batch AS
+SELECT
+  f.*,
+  CASE
+    WHEN f.n_versions > 1 THEN 'conflicting flight attributes'
+    WHEN f.actual_arrival IS NOT NULL AND f.actual_departure IS NOT NULL AND f.actual_arrival <= f.actual_departure
+      THEN 'actual_arrival <= actual_departure'
+    WHEN f.status IS NULL OR f.status NOT IN ('On Time', 'Delayed', 'Departed', 'Arrived', 'Scheduled', 'Cancelled')
+      THEN 'invalid_status'
+    WHEN dep.airport_code IS NULL THEN 'departure_airport not in silver airports'
+    WHEN arr.airport_code IS NULL THEN 'arrival_airport not in silver airports'
+    WHEN ac.aircraft_code IS NULL THEN 'aircraft_code not in silver aircrafts'
+  END AS reject_reason
+FROM (
+  SELECT *, count(*) OVER (PARTITION BY flight_id) AS n_versions
+  FROM (
+    SELECT DISTINCT
+      flight_id, flight_no, scheduled_departure, scheduled_arrival,
+      departure_airport, arrival_airport, status, aircraft_code,
+      actual_departure, actual_arrival
+    FROM lake.bronze.flight_seat_reservations
+    WHERE _batch_id = '${run_id}'
+      AND flight_id IS NOT NULL
+  )
+) f
+LEFT JOIN lake.silver.airports dep ON f.departure_airport = dep.airport_code
+LEFT JOIN lake.silver.airports arr ON f.arrival_airport = arr.airport_code
+LEFT JOIN lake.silver.aircrafts ac ON f.aircraft_code = ac.aircraft_code;
+
+INSERT INTO lake.silver.quarantine
+SELECT
+  'flight_seat_reservations' AS source_table,
+  reject_reason AS reason,
+  to_json(struct(
+    flight_id, flight_no, scheduled_departure, scheduled_arrival,
+    departure_airport, arrival_airport, status, aircraft_code,
+    actual_departure, actual_arrival
+  )) AS payload,
+  '${run_id}' AS _batch_id,
+  current_timestamp() AS _ingest_ts
+FROM flights_batch
+WHERE reject_reason IS NOT NULL;
+
 MERGE INTO lake.silver.flights_enriched AS target
 USING (
   SELECT
-    f.flight_id,
+    cast(f.flight_id as int) AS flight_id,
     f.flight_no,
     f.scheduled_departure,
     f.scheduled_arrival,
@@ -114,20 +121,11 @@ USING (
       then cast((unix_timestamp(f.actual_departure) - unix_timestamp(f.scheduled_departure)) / 60.0 as double)
       else null
     end AS dep_delay_min
-  FROM (
-    SELECT *,
-      row_number() OVER (PARTITION BY flight_id ORDER BY _ingest_ts DESC) AS rn
-    FROM lake.bronze.flights
-    WHERE _batch_id = '${run_id}'
-  ) f
-  LEFT JOIN lake.silver.airports dep ON f.departure_airport = dep.airport_code
-  LEFT JOIN lake.silver.airports arr ON f.arrival_airport = arr.airport_code
-  LEFT JOIN lake.silver.aircrafts ac ON f.aircraft_code = ac.aircraft_code
-  WHERE f.rn = 1
-    AND NOT (
-      (f.actual_arrival IS NOT NULL AND f.actual_departure IS NOT NULL AND f.actual_arrival <= f.actual_departure)
-      OR (f.status NOT IN ('On Time', 'Delayed', 'Departed', 'Arrived', 'Scheduled', 'Cancelled'))
-    )
+  FROM flights_batch f
+  JOIN lake.silver.airports dep ON f.departure_airport = dep.airport_code
+  JOIN lake.silver.airports arr ON f.arrival_airport = arr.airport_code
+  JOIN lake.silver.aircrafts ac ON f.aircraft_code = ac.aircraft_code
+  WHERE f.reject_reason IS NULL
 ) AS source
 ON target.flight_id = source.flight_id
 WHEN MATCHED THEN UPDATE SET *

@@ -15,8 +15,8 @@ def sanitize_run_id(val: Any) -> str:
     return re.sub(r"[^A-Za-z0-9_]", "_", str(val))
 
 
-def check_source_callable(**context: Any) -> str:
-    """Verify source database demo: select bookings.now() and verify bookings row count."""
+def pg_connect() -> Any:
+    """Open a psycopg2 connection to the source demo database (PG_URL / PG_* env)."""
     import psycopg2
 
     pg_url = os.environ.get("PG_URL", "jdbc:postgresql://db:5432/demo")
@@ -37,7 +37,7 @@ def check_source_callable(**context: Any) -> str:
             else:
                 host = hp
 
-    conn = psycopg2.connect(
+    return psycopg2.connect(
         host=host,
         port=port,
         dbname=dbname,
@@ -45,17 +45,23 @@ def check_source_callable(**context: Any) -> str:
         password=password,
         connect_timeout=10,
     )
+
+
+def check_source_callable(**context: Any) -> str:
+    """Verify source database demo: select raw.now() and verify raw has booked rows."""
+    conn = pg_connect()
     try:
         with conn.cursor() as cur:
-            cur.execute("SELECT bookings.now();")
+            cur.execute("SELECT raw.now();")
             row = cur.fetchone()
             cutoff = row[0] if row else None
 
-            cur.execute("SELECT count(*) FROM bookings.bookings;")
-            cnt_row = cur.fetchone()
-            cnt = cnt_row[0] if cnt_row else 0
-            if cnt == 0:
-                raise ValueError("bookings.bookings is empty; simulator has not run or cutoff empty")
+            cur.execute("SELECT EXISTS (SELECT 1 FROM raw.flight_seat_reservations WHERE ticket_no IS NOT NULL);")
+            has_booked = cur.fetchone()[0]
+            if not has_booked:
+                raise ValueError(
+                    "raw.flight_seat_reservations has no booked rows; simulator has not run or cutoff empty"
+                )
 
             cutoff_str = cutoff.isoformat() if hasattr(cutoff, "isoformat") else str(cutoff)
             ti = context.get("ti")
