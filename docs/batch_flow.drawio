@@ -1,0 +1,106 @@
+<mxfile>
+  <diagram id="batchFlowTechstack01" name="Page-1">
+    <mxGraphModel dx="1012" dy="453" grid="1" gridSize="10" guides="1" tooltips="0" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="1780" pageHeight="520" math="0" shadow="0">
+      <root>
+        <mxCell id="0" />
+        <mxCell id="1" parent="0" />
+        <mxCell id="title" parent="1" style="text;html=1;align=center;verticalAlign=middle;fontSize=18;fontStyle=1;" value="Batch Pipeline — Airflow DAG &amp; Tech Stack (airlines_medallion)" vertex="1">
+          <mxGeometry height="30" width="900" y="-290" as="geometry" />
+        </mxCell>
+        <mxCell id="airflow-group" parent="1" style="rounded=0;whiteSpace=wrap;html=1;dashed=1;verticalAlign=top;align=left;spacingLeft=8;spacingTop=6;fillColor=none;fontStyle=2;" value="Airflow 2.10.5 · LocalExecutor · DAG airlines_medallion (schedule=None) · webserver UI :8083" vertex="1">
+          <mxGeometry height="245" width="1600" y="-230" as="geometry" />
+        </mxCell>
+        <mxCell id="t-check" parent="1" style="whiteSpace=wrap;html=1;align=left;verticalAlign=top;spacingLeft=8;spacingTop=6;fillColor=#d0e0e3;strokeColor=#76a5af;" value="&lt;b&gt;check_source&lt;/b&gt;&lt;br&gt;PythonOperator&lt;br&gt;psycopg2: SELECT raw.now();&lt;br&gt;verify booked rows exist&lt;br&gt;push cutoff → XCom" vertex="1">
+          <mxGeometry height="120" width="260" x="30" y="-170" as="geometry" />
+        </mxCell>
+        <mxCell id="t-bronze" parent="1" style="whiteSpace=wrap;html=1;align=left;verticalAlign=top;spacingLeft=8;spacingTop=6;fillColor=#d0e0e3;strokeColor=#76a5af;" value="&lt;b&gt;bronze&lt;/b&gt;&lt;br&gt;SparkSubmitOperator&lt;br&gt;spark-submit bronze.py&lt;br&gt;--run-id &amp;lt;id&amp;gt;" vertex="1">
+          <mxGeometry height="120" width="260" x="330" y="-170" as="geometry" />
+        </mxCell>
+        <mxCell id="t-silver" parent="1" style="whiteSpace=wrap;html=1;align=left;verticalAlign=top;spacingLeft=8;spacingTop=6;fillColor=#d0e0e3;strokeColor=#76a5af;" value="&lt;b&gt;silver&lt;/b&gt;&lt;br&gt;SparkSubmitOperator&lt;br&gt;spark-submit silver.py" vertex="1">
+          <mxGeometry height="120" width="260" x="630" y="-170" as="geometry" />
+        </mxCell>
+        <mxCell id="t-gold" parent="1" style="whiteSpace=wrap;html=1;align=left;verticalAlign=top;spacingLeft=8;spacingTop=6;fillColor=#d0e0e3;strokeColor=#76a5af;" value="&lt;b&gt;gold&lt;/b&gt;&lt;br&gt;SparkSubmitOperator&lt;br&gt;spark-submit gold.py" vertex="1">
+          <mxGeometry height="120" width="260" x="930" y="-170" as="geometry" />
+        </mxCell>
+        <mxCell id="t-publish" parent="1" style="whiteSpace=wrap;html=1;align=left;verticalAlign=top;spacingLeft=8;spacingTop=6;fillColor=#d0e0e3;strokeColor=#76a5af;" value="&lt;b&gt;publish&lt;/b&gt;&lt;br&gt;SparkSubmitOperator&lt;br&gt;spark-submit publish.py" vertex="1">
+          <mxGeometry height="120" width="260" x="1230" y="-170" as="geometry" />
+        </mxCell>
+        <mxCell id="t-failure" parent="1" style="whiteSpace=wrap;html=1;align=center;verticalAlign=middle;dashed=1;fillColor=none;strokeColor=#b85450;fontStyle=2;" value="on_failure_callback (any task)" vertex="1">
+          <mxGeometry height="35" width="260" x="630" y="-30" as="geometry" />
+        </mxCell>
+        <mxCell id="pg" parent="1" style="shape=cylinder3;whiteSpace=wrap;html=1;boundedLbl=1;backgroundOutline=1;size=15;align=left;verticalAlign=top;spacingLeft=8;spacingTop=14;fillColor=#dae8fc;strokeColor=#6c8ebf;" value="&lt;b&gt;PostgreSQL 16&lt;/b&gt;&lt;br&gt;container db · :5432&lt;br&gt;schema raw (point-in-time snapshot)&lt;br&gt;schema archive (full history)" vertex="1">
+          <mxGeometry height="140" width="340" x="-10" y="120" as="geometry" />
+        </mxCell>
+        <mxCell id="spark" parent="1" style="whiteSpace=wrap;html=1;align=left;verticalAlign=top;spacingLeft=8;spacingTop=6;fillColor=#f8cecc;strokeColor=#b85450;" value="&lt;b&gt;Spark 3.5.9 standalone&lt;/b&gt;&lt;br&gt;spark:7077 master (UI :8080)&lt;br&gt;spark-worker — 2 cores / 2 GB (UI :8081)&lt;br&gt;pkgs: iceberg-spark-runtime-3.5_2.12:1.10.0,&lt;br&gt;mongo-spark-connector_2.12:10.4.1, postgresql:42.7.4" vertex="1">
+          <mxGeometry height="160" width="420" x="400" y="760" as="geometry" />
+        </mxCell>
+        <mxCell id="hdfs" parent="1" style="whiteSpace=wrap;html=1;align=left;verticalAlign=top;spacingLeft=8;spacingTop=6;fillColor=#fff2cc;strokeColor=#d6b656;" value="&lt;b&gt;HDFS 3.5.0 + Iceberg HadoopCatalog&lt;/b&gt;&lt;br&gt;namenode :9000 (RPC) / :9870 (WebHDFS UI)&lt;br&gt;datanode :9866 · single-replica&lt;br&gt;warehouse hdfs://namenode:9000/warehouse&lt;br&gt;namespaces: lake.meta, lake.bronze, lake.silver (+quarantine), lake.gold" vertex="1">
+          <mxGeometry height="160" width="440" x="910" y="300" as="geometry" />
+        </mxCell>
+        <mxCell id="mongo" parent="1" style="shape=cylinder3;whiteSpace=wrap;html=1;boundedLbl=1;backgroundOutline=1;size=15;align=left;verticalAlign=top;spacingLeft=8;spacingTop=14;fillColor=#d5e8d4;strokeColor=#82b366;" value="&lt;b&gt;MongoDB 7.0&lt;/b&gt;&lt;br&gt;container mongo · :27017&lt;br&gt;db airlines&lt;br&gt;collections: gold_*, dim_*, pipeline_runs, live_bookings" vertex="1">
+          <mxGeometry height="140" width="340" x="1400" y="850" as="geometry" />
+        </mxCell>
+        <mxCell id="e-seq-1" edge="1" parent="1" source="t-check" style="edgeStyle=orthogonalEdgeStyle;html=1;" target="t-bronze">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e-seq-2" edge="1" parent="1" source="t-bronze" style="edgeStyle=orthogonalEdgeStyle;html=1;" target="t-silver">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e-seq-3" edge="1" parent="1" source="t-silver" style="edgeStyle=orthogonalEdgeStyle;html=1;" target="t-gold">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e-seq-4" edge="1" parent="1" source="t-gold" style="edgeStyle=orthogonalEdgeStyle;html=1;" target="t-publish">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e-check-pg" edge="1" parent="1" source="t-check" style="edgeStyle=orthogonalEdgeStyle;html=1;" target="pg" value="psycopg2 direct SQL">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e-bronze-spark" edge="1" parent="1" source="t-bronze" style="edgeStyle=orthogonalEdgeStyle;html=1;" target="spark" value="">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e-silver-spark" edge="1" parent="1" source="t-silver" style="edgeStyle=orthogonalEdgeStyle;html=1;" target="spark" value="">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e-gold-spark" edge="1" parent="1" source="t-gold" style="edgeStyle=orthogonalEdgeStyle;html=1;" target="spark" value="">
+          <mxGeometry relative="1" x="0.0556" as="geometry">
+            <Array as="points">
+              <mxPoint x="1060" y="70" />
+              <mxPoint x="610" y="70" />
+            </Array>
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="e-publish-spark" edge="1" parent="1" source="t-publish" style="edgeStyle=orthogonalEdgeStyle;html=1;" target="spark" value="">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points">
+              <mxPoint x="1360" y="70" />
+              <mxPoint x="610" y="70" />
+            </Array>
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="zA03Zi0hsmoxZqW1BhhN-2" connectable="0" parent="e-publish-spark" style="edgeLabel;html=1;align=center;verticalAlign=middle;resizable=0;points=[];" value="spark-submit" vertex="1">
+          <mxGeometry relative="1" x="0.7331" y="1" as="geometry">
+            <mxPoint as="offset" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="e-spark-pg" edge="1" parent="1" source="spark" style="edgeStyle=orthogonalEdgeStyle;html=1;dashed=1;" target="pg" value="bronze.py: JDBC read raw.* (8-way partition on flight_id), driver postgresql:42.7.4">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e-spark-hdfs" edge="1" parent="1" source="spark" style="edgeStyle=orthogonalEdgeStyle;html=1;" target="hdfs" value="bronze: append lake.bronze.* · silver: MERGE INTO lake.silver.* · gold: aggregate + expire_snapshots(retain_last=3)">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e-spark-mongo" edge="1" parent="1" source="spark" style="edgeStyle=orthogonalEdgeStyle;html=1;" target="mongo" value="publish.py: mongo-spark-connector replace-upsert by _id + PyMongo purge stale _run_id, build indexes, write pipeline_runs">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points">
+              <mxPoint x="610" y="1000" />
+              <mxPoint x="1110" y="1000" />
+              <mxPoint x="1110" y="920" />
+            </Array>
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="e-failure-mongo" edge="1" parent="1" source="t-failure" style="edgeStyle=orthogonalEdgeStyle;html=1;dashed=1;" target="mongo" value="PyMongo writes pipeline_runs {status: &#39;failed&#39;}">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+      </root>
+    </mxGraphModel>
+  </diagram>
+</mxfile>

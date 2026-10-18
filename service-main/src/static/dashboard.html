@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Airlines Lakehouse — KTDL-Group20</title>
+  <title>Airlines Analytics — KTDL-Group20</title>
 
   <!-- Leaflet CSS & JS from CDN -->
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
@@ -20,14 +20,10 @@
   <div class="dashboard-container">
     <header>
       <div class="header-brand">
-        <h1>✈️ Airlines Lakehouse Dashboard</h1>
-        <span class="badge badge-info">FastAPI &bull; Iceberg &bull; Mongo</span>
+        <h1>✈️ Airlines Analytics Dashboard</h1>
       </div>
       <div style="display: flex; align-items: center; gap: 8px;">
-        <a id="dbt-docs-link" href="http://localhost:8085" target="_blank" rel="noopener noreferrer" class="badge badge-success" style="text-decoration: none; display: inline-flex; align-items: center; gap: 4px; padding: 6px 12px; font-weight: 600;" title="Open interactive dbt lineage DAG graph and data dictionary on port 8085">
-          📊 Data Lineage (dbt docs) ↗
-        </a>
-        <span id="latest-run-badge" class="badge badge-warning">Pipeline: Checking...</span>
+        <span id="latest-run-badge" class="badge badge-warning">Checking...</span>
       </div>
     </header>
 
@@ -70,8 +66,8 @@
       <section id="tab-overview" class="tab-content active">
         <div class="empty-state" style="display: none;">
           <div class="empty-state-icon">📊</div>
-          <h3>No Lakehouse Data Available</h3>
-          <p>The medallion pipeline has not published any Gold marts yet. Run the Airflow DAG <code>airlines_medallion</code> to ingest bronze/silver data and build gold marts.</p>
+          <h3>No Data Available</h3>
+          <p>The dashboard hasn't been populated yet. Run the data pipeline to load it.</p>
         </div>
 
         <div class="tab-data">
@@ -109,17 +105,26 @@
           </div>
 
           <div class="card">
-            <div class="card-title">Lakehouse Architecture Flow</div>
-            <p style="color: var(--text-secondary); margin-bottom: 1rem; font-size: 0.9rem;">
-              Postgres Airlines DB &rarr; Change Simulator &rarr; Spark (HDFS Bronze &amp; Silver Iceberg) &rarr; Gold Marts &rarr; MongoDB &rarr; FastAPI &amp; Dashboard
-            </p>
-            <div style="display: flex; gap: 1rem; flex-wrap: wrap;">
-              <span class="badge badge-info">Postgres DB</span> &rarr;
-              <span class="badge badge-info">HDFS Bronze (Iceberg append)</span> &rarr;
-              <span class="badge badge-info">Silver Cleaned (Iceberg merge)</span> &rarr;
-              <span class="badge badge-success">Gold Marts</span> &rarr;
-              <span class="badge badge-success">MongoDB</span> &rarr;
-              <span class="badge badge-success">FastAPI /api</span>
+            <div class="card-title">
+              <span>Live Bookings <span id="live-pulse" class="badge badge-success" style="margin-left: 6px;">●</span></span>
+              <span style="font-size: 0.8rem; color: var(--text-muted); font-weight: normal;">
+                Updates automatically &bull; last 20 minutes
+              </span>
+            </div>
+            <div class="kpi-grid" style="margin-bottom: 1rem;">
+              <div class="kpi-card">
+                <div class="kpi-title">Bookings (last 20 min)</div>
+                <div class="kpi-value" id="kpi-live-bookings">0</div>
+                <div class="kpi-sub">New bookings right now</div>
+              </div>
+              <div class="kpi-card">
+                <div class="kpi-title">Revenue (last 20 min)</div>
+                <div class="kpi-value" id="kpi-live-revenue">0 ₽</div>
+                <div class="kpi-sub">From those bookings</div>
+              </div>
+            </div>
+            <div class="chart-container" style="height: 220px;">
+              <canvas id="chart-live-bookings"></canvas>
             </div>
           </div>
         </div>
@@ -130,7 +135,7 @@
         <div class="empty-state" style="display: none;">
           <div class="empty-state-icon">🗺️</div>
           <h3>No Map Data Available</h3>
-          <p>Airport dimensions and route lines have not been loaded into MongoDB.</p>
+          <p>Airport and route data hasn't been loaded yet.</p>
         </div>
 
         <div class="tab-data">
@@ -151,7 +156,7 @@
         <div class="empty-state" style="display: none;">
           <div class="empty-state-icon">⏱️</div>
           <h3>No Delay Statistics Available</h3>
-          <p>Gold delay heatmap and aircraft delay marts are empty.</p>
+          <p>No delay data available yet.</p>
         </div>
 
         <div class="tab-data">
@@ -197,7 +202,7 @@
         <div class="empty-state" style="display: none;">
           <div class="empty-state-icon">💰</div>
           <h3>No Revenue Data Available</h3>
-          <p>Gold route revenue and Pareto marts are not populated.</p>
+          <p>No revenue data available yet.</p>
         </div>
 
         <div class="tab-data">
@@ -236,7 +241,7 @@
         <div class="empty-state" style="display: none;">
           <div class="empty-state-icon">🛩️</div>
           <h3>No Fleet Data Available</h3>
-          <p>Gold fleet mart is empty.</p>
+          <p>No fleet data available yet.</p>
         </div>
 
         <div class="tab-data">
@@ -283,26 +288,26 @@
       <section id="tab-pipeline" class="tab-content">
         <div class="empty-state" style="display: none;">
           <div class="empty-state-icon">⚙️</div>
-          <h3>No Pipeline Execution History</h3>
-          <p>No Airflow execution runs have been logged in <code>pipeline_runs</code> yet.</p>
+          <h3>No Pipeline Runs Yet</h3>
+          <p>No data refresh runs have been logged yet.</p>
         </div>
 
         <div class="tab-data">
           <div class="card">
-            <div class="card-title">Latest 20 Pipeline Medallion Ingestion Runs</div>
+            <div class="card-title">Latest 20 Data Refresh Runs</div>
             <div class="table-responsive">
               <table id="table-pipeline">
                 <thead>
                   <tr>
                     <th>Run ID</th>
-                    <th>Source Cutoff</th>
+                    <th>Data As Of</th>
                     <th>Started At</th>
                     <th>Finished At</th>
                     <th>Status</th>
                     <th>Bronze Rows</th>
                     <th>Silver Rows</th>
                     <th>Gold Rows</th>
-                    <th>Quarantine</th>
+                    <th>Anomalies Caught</th>
                   </tr>
                 </thead>
                 <tbody></tbody>
@@ -311,10 +316,11 @@
           </div>
         </div>
       </section>
+
     </main>
 
     <footer>
-      KTDL-Group20 Airlines Lakehouse Platform &bull; FastAPI Service &bull; Airflow + Spark + Iceberg + MongoDB
+      KTDL-Group20 Airlines Analytics
     </footer>
   </div>
 </body>
