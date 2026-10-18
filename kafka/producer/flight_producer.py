@@ -28,6 +28,7 @@ ARRIVED_TOPIC = os.environ.get("ARRIVED_TOPIC", "flight.arrived")
 
 SPEED_FACTOR = float(os.environ.get("SPEED_FACTOR", "4000"))
 MAX_GAP_SECONDS = float(os.environ.get("MAX_GAP_SECONDS", "2.0"))
+MIN_GAP_SECONDS = float(os.environ.get("MIN_GAP_SECONDS", "0.05"))  # floor, so same-timestamp bursts don't fire unthrottled
 LIMIT_FLIGHTS = os.environ.get("LIMIT_FLIGHTS", "")
 
 QUERY_TEMPLATE = """
@@ -107,9 +108,8 @@ def main() -> None:
         for ts, topic, payload in events:
             if prev_ts is not None:
                 real_gap = (ts - prev_ts).total_seconds()
-                sleep_for = min(max(real_gap / SPEED_FACTOR, 0.0), MAX_GAP_SECONDS)
-                if sleep_for > 0:
-                    time.sleep(sleep_for)
+                sleep_for = min(max(real_gap / SPEED_FACTOR, MIN_GAP_SECONDS), MAX_GAP_SECONDS)
+                time.sleep(sleep_for)
             prev_ts = ts
 
             producer.send(topic, key=payload["flight_id"], value=payload)

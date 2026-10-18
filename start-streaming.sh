@@ -43,9 +43,12 @@ echo "--- Starting the combined Spark streaming app (booking + flight telemetry)
 docker compose -f "$root/spark/docker-compose.dev.yaml" up -d spark-stream
 
 echo
-echo "--- Streaming layer is up. To send test data:"
+echo "--- Streaming layer is up. For a quick smoke test:"
 echo "  docker compose -f kafka/docker-compose.dev.yaml run --rm -e LIMIT_BOOKINGS=50 -e SPEED_FACTOR=200000 -e MAX_GAP_SECONDS=0.02 booking-producer"
 echo "  docker compose -f kafka/docker-compose.dev.yaml run --rm -e LIMIT_FLIGHTS=50 -e SPEED_FACTOR=200000 -e MAX_GAP_SECONDS=0.02 flight-producer"
+echo
+echo "--- For an extended live-traffic test (full archive, until you stop it):"
+echo "  ./simulate-live-traffic.sh"
 echo
 echo "--- Watch it process:"
 echo "  docker logs -f spark-spark-stream-1"

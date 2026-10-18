@@ -1,4 +1,4 @@
-// KTDL-Group20 Airlines Lakehouse Dashboard Client
+// KTDL-Group20 Airlines Analytics Dashboard Client
 (function () {
   "use strict";
 
@@ -205,15 +205,18 @@
     setText("kpi-fleet-count", `${formatNumber(s.total_aircraft)} models`);
     setText("kpi-airports-count", `${formatNumber(s.total_airports)} airports`);
 
-    // Latest run badge
+    // Data freshness badge
     const badge = document.getElementById("latest-run-badge");
     if (badge) {
-      if (s.latest_run) {
-        badge.className = `badge badge-${s.latest_run.status === "success" ? "success" : "danger"}`;
-        badge.textContent = `Pipeline: ${s.latest_run.status} (${formatDate(s.latest_run.finished_at || s.latest_run.cutoff)})`;
+      if (s.latest_run && s.latest_run.status === "success") {
+        badge.className = "badge badge-success";
+        badge.textContent = `Data as of ${formatDate(s.latest_run.finished_at || s.latest_run.cutoff)}`;
+      } else if (s.latest_run) {
+        badge.className = "badge badge-danger";
+        badge.textContent = "Data update failed";
       } else {
         badge.className = "badge badge-warning";
-        badge.textContent = "Pipeline: No runs yet";
+        badge.textContent = "No data yet";
       }
     }
   }
@@ -762,7 +765,7 @@
     });
   }
 
-  // 7. Live Booking Stream (polled separately from loadAllData)
+  // 7. Live Bookings (polled separately from loadAllData)
   async function pollLiveBookings() {
     const data = await fetchJson("/api/live/bookings?minutes=20");
     if (!data) return;
@@ -898,10 +901,6 @@
 
   // Init
   document.addEventListener("DOMContentLoaded", () => {
-    const dbtLink = document.getElementById("dbt-docs-link");
-    if (dbtLink && window.location.hostname) {
-      dbtLink.href = `${window.location.protocol}//${window.location.hostname}:8085`;
-    }
     setupEvents();
     loadAllData();
     pollLiveBookings();

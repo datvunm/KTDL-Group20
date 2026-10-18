@@ -13,7 +13,7 @@ What each tab of the dashboard shows and where the numbers come from. See [PIPEL
   - [Tab 3: Delay Analysis — Operational Bottlenecks](#tab-3-delay-analysis--operational-bottlenecks)
   - [Tab 4: Revenue Analysis — Financial Concentration](#tab-4-revenue-analysis--financial-concentration)
   - [Tab 5: Fleet \& Utilization — Asset Efficiency](#tab-5-fleet--utilization--asset-efficiency)
-  - [Tab 6: Pipeline Health — Data Engineering Observability](#tab-6-pipeline-health--data-engineering-observability)
+  - [Tab 6: Pipeline — Data Refresh History](#tab-6-pipeline--data-refresh-history)
   - [Benchmark Acceptance Metrics at Final Cutoff](#benchmark-acceptance-metrics-at-final-cutoff)
 
 ---
@@ -29,7 +29,9 @@ What each tab of the dashboard shows and where the numbers come from. See [PIPEL
 | Active Fleet | 9 models | row count of `gold_fleet` |
 | Airports Network | 104 | row count of `dim_airports` |
 
-Header also shows a pipeline status badge: latest Airflow run status + timestamp.
+Header also shows a data-freshness badge: when the Gold marts were last refreshed.
+
+Also on this tab: a **Live Bookings** panel - bookings and revenue in the last 20 minutes, polled every 5s from `GET /api/live/bookings`, fed by the streaming layer (see [PIPELINE.md](PIPELINE.md#streaming-speed-layer-kafka--spark-structured-streaming)).
 
 ---
 
@@ -75,11 +77,9 @@ Leaflet map of the network.
 
 ---
 
-## Tab 6: Pipeline Health — Data Engineering Observability
+## Tab 6: Pipeline — Data Refresh History
 
-**Pipeline execution history** (last 20 runs from `pipeline_runs`): run id, source cutoff (`raw.now()`), started/finished (UTC), status badge, bronze/silver/gold row counts, and the quarantine count (0 = clean run).
-
-The same tab also has a **Live Booking Stream** panel fed by the streaming layer (see [PIPELINE.md](PIPELINE.md#streaming-speed-layer-kafka--spark-structured-streaming)) - a bar chart of bookings/minute, polled every 5s from `GET /api/live/bookings`, separate from the batch-refreshed KPIs above it.
+**Data refresh runs** (last 20, from `pipeline_runs`): run id, data as-of cutoff, started/finished (UTC), status badge, bronze/silver/gold row counts, and anomalies caught (0 = clean run).
 
 ---
 

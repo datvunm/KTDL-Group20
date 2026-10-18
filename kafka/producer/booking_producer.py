@@ -25,6 +25,7 @@ TOPIC = os.environ.get("BOOKING_TOPIC", "booking.created")
 
 SPEED_FACTOR = float(os.environ.get("SPEED_FACTOR", "4000"))  # 1 real second = this many simulated seconds
 MAX_GAP_SECONDS = float(os.environ.get("MAX_GAP_SECONDS", "2.0"))  # cap on any single pause
+MIN_GAP_SECONDS = float(os.environ.get("MIN_GAP_SECONDS", "0.05"))  # floor, so same-timestamp bursts don't fire unthrottled
 LIMIT_BOOKINGS = os.environ.get("LIMIT_BOOKINGS", "")  # for smoke-testing
 
 QUERY_TEMPLATE = """
@@ -84,9 +85,8 @@ def main() -> None:
             book_date = row["book_date"]
             if prev_book_date is not None:
                 real_gap = (book_date - prev_book_date).total_seconds()
-                sleep_for = min(max(real_gap / SPEED_FACTOR, 0.0), MAX_GAP_SECONDS)
-                if sleep_for > 0:
-                    time.sleep(sleep_for)
+                sleep_for = min(max(real_gap / SPEED_FACTOR, MIN_GAP_SECONDS), MAX_GAP_SECONDS)
+                time.sleep(sleep_for)
             prev_book_date = book_date
 
             payload = {

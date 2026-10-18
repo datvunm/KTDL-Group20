@@ -84,7 +84,7 @@ A second, always-on path replays real historical events from `archive.flight_sea
   - `stream_bookings.py` + `pipeline/sql/stream_bookings/*.sql`: appends to `lake.bronze.booking_events`, upserts `bookings`, `tickets`, `ticket_flights`, and `flights_enriched` (insert-only - creates a `Scheduled` placeholder if the batch hasn't loaded that flight yet, never overwrites a status the batch already set).
   - `stream_flights.py` + `pipeline/sql/stream_flights/*.sql`: appends to `lake.bronze.flight_events`, upserts `flights_enriched` with real status/actuals, same formulas as `06_flights_enriched.sql`. This one may overwrite - it's real recorded data.
   - Both delete-then-append their own `_batch_id` in bronze before writing, so a retried micro-batch doesn't duplicate rows.
-- **Live dashboard panel**: `stream_bookings.py` also writes a per-minute booking count/revenue to Mongo's `live_bookings`. `GET /api/live/bookings` serves the last 20 minutes; the dashboard's Pipeline tab polls it every 5s.
+- **Live dashboard panel**: `stream_bookings.py` also writes a per-minute booking count/revenue to Mongo's `live_bookings`. `GET /api/live/bookings` serves the last 20 minutes; the dashboard's Overview tab polls it every 5s.
 - **Operational notes**: Kafka is a single-broker KRaft cluster; topics must exist before the consumer subscribes. Producer env vars: `SPEED_FACTOR`, `MAX_GAP_SECONDS`, `LIMIT_BOOKINGS` / `LIMIT_FLIGHTS`.
 
 ### Serving Layer & FastAPI Ingestion

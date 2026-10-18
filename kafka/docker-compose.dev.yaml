@@ -37,6 +37,7 @@ services:
       PG_PASSWORD: ${PG_PASSWORD:-123456}
       KAFKA_BOOTSTRAP: ${KAFKA_BOOTSTRAP:-kafka-0:9092}
       SPEED_FACTOR: ${SPEED_FACTOR:-4000}
+      MIN_GAP_SECONDS: ${MIN_GAP_SECONDS:-0.05}
       LIMIT_BOOKINGS: ${LIMIT_BOOKINGS:-}
     networks:
       - ktdl-network
@@ -52,6 +53,7 @@ services:
       PG_PASSWORD: ${PG_PASSWORD:-123456}
       KAFKA_BOOTSTRAP: ${KAFKA_BOOTSTRAP:-kafka-0:9092}
       SPEED_FACTOR: ${SPEED_FACTOR:-4000}
+      MIN_GAP_SECONDS: ${MIN_GAP_SECONDS:-0.05}
       LIMIT_FLIGHTS: ${LIMIT_FLIGHTS:-}
     networks:
       - ktdl-network
