@@ -1,3 +1,4 @@
+from datetime import datetime, timedelta, timezone
 from typing import Any
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pymongo.database import Database
@@ -124,6 +125,32 @@ def get_runs(
         .limit(capped_limit)
     )
     return [sanitize_doc(doc) for doc in cursor]
+
+
+@router.get("/live/bookings")
+def get_live_bookings(
+    minutes: int = Query(default=20, le=120, description="Lookback window in minutes"),
+    db: Database[Any] = Depends(get_db),
+) -> dict[str, Any]:
+    coll = db["live_bookings"]
+    cutoff = datetime.now(timezone.utc) - timedelta(minutes=minutes)
+
+    cursor = coll.find({"minute": {"$gte": cutoff}}, projection={"_id": 1, "bookings": 1, "revenue": 1}).sort("_id", 1)
+    buckets = [
+        {
+            "minute": doc["_id"],
+            "bookings": int(doc.get("bookings", 0)),
+            "revenue": float(doc.get("revenue", 0.0)),
+        }
+        for doc in cursor
+    ]
+
+    return {
+        "buckets": buckets,
+        "total_bookings": sum(b["bookings"] for b in buckets),
+        "total_revenue": sum(b["revenue"] for b in buckets),
+        "window_minutes": minutes,
+    }
 
 
 @router.get("/summary")

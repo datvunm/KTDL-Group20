@@ -1,6 +1,6 @@
 # Airlines Lakehouse dbt Project
 
-This directory contains the **dbt (data build tool)** project for the Airlines Medallion Lakehouse platform. It provides declarative data transformations, schema testing, and interactive column-level data lineage across Bronze, Silver, and Gold layers.
+This directory contains the dbt project for the Airlines Medallion Lakehouse: declarative transformations, schema tests, and column-level lineage across Bronze, Silver, and Gold. See [docs/PIPELINE.md](../docs/PIPELINE.md) for the actual running pipeline (Spark + Iceberg) this project mirrors.
 
 ---
 
@@ -86,7 +86,7 @@ dbt/
 ## Quick Start
 
 ### 1. View Interactive Lineage in Docker Compose
-The `dbt-docs` container is automatically started with `./start-all.sh`.
+Start it with `./start-admin-uis.sh` (not part of the default `./start-all.sh` stack).
 - Open **[http://localhost:8085](http://localhost:8085)** in your browser.
 - Click the teal icon in the lower-right corner to open the **Lineage Graph (DAG)**.
 

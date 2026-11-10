@@ -5,7 +5,7 @@ A Medallion Lakehouse platform built with PostgreSQL, Apache Spark, Apache Icebe
 ---
 
 ## Architecture
-> 📘 **Detailed Technical Reference**: For complete technical specifications covering container topology, simulation mechanics, Iceberg layer transformations, and data engineering patterns, see [System Design & Dashboard Documentation](docs/SYSTEM_DESIGN_AND_DASHBOARD.md).
+> 📘 **Technical reference**: [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for container topology and ports, [docs/PIPELINE.md](docs/PIPELINE.md) for the simulator and Bronze/Silver/Gold/Publish/streaming logic.
 
 
 The system implements a Medallion Lakehouse architecture orchestrating data movement from a relational OLTP database through raw, curated, and analytical layers:
@@ -91,7 +91,7 @@ Follow this step-by-step runbook to run the full end-to-end integration:
 ```bash
 ./start-all.sh
 ```
-This script ensures `ktdl-network` exists, boots all Docker Compose stacks, and verifies container-to-container connectivity.
+This script ensures `ktdl-network` exists, boots the core pipeline stacks, and verifies container-to-container connectivity. Admin UIs (adminer, mongo-express, dbt-docs) and the streaming layer (Kafka, Spark Structured Streaming) are heavier and opt-in - bring them up with `./start-admin-uis.sh` and `./start-streaming.sh` when you need them.
 
 ### 2. Load the Postgres demo database
 ```bash
@@ -120,11 +120,11 @@ Open [http://localhost:8000](http://localhost:8000) to view:
 - Delay heatmaps (Day of Week × Departure Hour)
 - Aircraft fleet load factors and performance
 
-Open [http://localhost:8085](http://localhost:8085) (or click the **📊 Data Lineage (dbt docs)** link in the dashboard header) to explore:
+Run `./start-admin-uis.sh` first, then open [http://localhost:8085](http://localhost:8085) (or click the **📊 Data Lineage (dbt docs)** link in the dashboard header) to explore:
 - Interactive column-level data lineage graph (DAG) across Bronze, Silver, and Gold layers
 - Schema tests, column descriptions, and model definitions
 
-> 📊 **Dashboard Guide & Analysis**: See [System Design & Dashboard: Section 4](docs/SYSTEM_DESIGN_AND_DASHBOARD.md#4-dashboard-walkthrough--business-intelligence) for an exhaustive breakdown of what evaluators see on each tab (Overview, Map, Delays, Revenue, Fleet, Pipeline), underlying business meaning, and official benchmark acceptance figures.
+> 📊 **Dashboard Guide**: See [docs/DASHBOARD.md](docs/DASHBOARD.md) for what each tab shows, metric sources, and benchmark acceptance figures.
 
 ### 6. Repeat with subsequent cutoffs
 Advance the cutoff to observe incremental processing:
@@ -142,6 +142,13 @@ docker compose -f airflow/docker-compose.dev.yaml exec airflow airflow dags trig
 ```bash
 ./stop-all.sh
 ```
+Stops everything but keeps your loaded data (Postgres, Mongo, HDFS) in Docker volumes, so `./start-all.sh` picks up where you left off.
+
+To wipe that data and start completely fresh instead:
+```bash
+./reset.sh
+```
+Deletes the project's Postgres/Mongo/HDFS/Kafka volumes (asks for confirmation first). Re-init afterward with `./start-all.sh` and `./source/load_dump.sh`.
 
 ---
 

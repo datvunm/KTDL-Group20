@@ -1,0 +1,81 @@
+<mxfile>
+  <diagram id="streamFlowTechstack01" name="Page-1">
+    <mxGraphModel dx="1012" dy="453" grid="1" gridSize="10" guides="1" tooltips="0" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="2000" pageHeight="680" math="0" shadow="0">
+      <root>
+        <mxCell id="0" />
+        <mxCell id="1" parent="0" />
+        <mxCell id="title" parent="1" style="text;html=1;align=center;verticalAlign=middle;fontSize=18;fontStyle=1;" value="Streaming Speed Layer" vertex="1">
+          <mxGeometry height="30" width="1000" x="40" y="10" as="geometry" />
+        </mxCell>
+        <mxCell id="producers-group" parent="1" style="rounded=0;whiteSpace=wrap;html=1;dashed=1;verticalAlign=top;align=left;spacingLeft=8;spacingTop=6;fillColor=none;fontStyle=2;" value="Producers" vertex="1">
+          <mxGeometry height="315" width="330" x="-20" y="95" as="geometry" />
+        </mxCell>
+        <mxCell id="booking-producer" parent="1" style="whiteSpace=wrap;html=1;align=left;verticalAlign=top;spacingLeft=8;spacingTop=6;fillColor=#cfe2f3;strokeColor=#3d85c6;" value="&lt;b&gt;booking_producer.py&lt;/b&gt;&lt;br&gt;reads: archive bookings&lt;br&gt;writes: topic booking.created" vertex="1">
+          <mxGeometry height="120" width="220" x="60" y="260" as="geometry" />
+        </mxCell>
+        <mxCell id="flight-producer" parent="1" style="whiteSpace=wrap;html=1;align=left;verticalAlign=top;spacingLeft=8;spacingTop=6;fillColor=#cfe2f3;strokeColor=#3d85c6;" value="&lt;b&gt;flight_producer.py&lt;/b&gt;&lt;br&gt;reads: archive flights&lt;br&gt;writes: topics flight.departed, flight.arrived" vertex="1">
+          <mxGeometry height="120" width="220" x="60" y="112.5" as="geometry" />
+        </mxCell>
+        <mxCell id="kafka" parent="1" style="whiteSpace=wrap;html=1;align=left;verticalAlign=top;spacingLeft=8;spacingTop=6;fillColor=#e1d5e7;strokeColor=#9673a6;" value="&lt;b&gt;Kafka&lt;/b&gt;&lt;br&gt;topics:&lt;br&gt;booking.created&lt;br&gt;flight.departed&lt;br&gt;flight.arrived" vertex="1">
+          <mxGeometry height="95" width="260" x="500" y="137.5" as="geometry" />
+        </mxCell>
+        <mxCell id="spark-stream-group" parent="1" style="rounded=0;whiteSpace=wrap;html=1;dashed=1;verticalAlign=top;align=left;spacingLeft=8;spacingTop=6;fillColor=none;fontStyle=2;" value="Spark Structured Streaming" vertex="1">
+          <mxGeometry height="250" width="620" x="940" y="70" as="geometry" />
+        </mxCell>
+        <mxCell id="stream-bookings" parent="1" style="whiteSpace=wrap;html=1;align=left;verticalAlign=top;spacingLeft=8;spacingTop=6;fillColor=#f8cecc;strokeColor=#b85450;" value="&lt;b&gt;stream_bookings.py&lt;/b&gt;&lt;br&gt;needs: topic booking.created&lt;br&gt;writes: bookings, tickets, ticket_flights&lt;br&gt;flight: placeholder only if missing" vertex="1">
+          <mxGeometry height="110" width="270" x="970" y="130" as="geometry" />
+        </mxCell>
+        <mxCell id="stream-flights" parent="1" style="whiteSpace=wrap;html=1;align=left;verticalAlign=top;spacingLeft=8;spacingTop=6;fillColor=#f8cecc;strokeColor=#b85450;" value="&lt;b&gt;stream_flights.py&lt;/b&gt;&lt;br&gt;needs: topics flight.departed, flight.arrived&lt;br&gt;writes: flight status &amp;amp; actual times (overwrites)" vertex="1">
+          <mxGeometry height="110" width="270" x="1260" y="130" as="geometry" />
+        </mxCell>
+        <mxCell id="lakehouse" parent="1" style="whiteSpace=wrap;html=1;align=left;verticalAlign=top;spacingLeft=8;spacingTop=6;fillColor=#fff2cc;strokeColor=#d6b656;" value="&lt;b&gt;Lakehouse&lt;/b&gt;&lt;br&gt;bronze: booking_events, flight_events&lt;br&gt;silver: bookings, tickets, ticket_flights, flights_enriched" vertex="1">
+          <mxGeometry height="70" width="360" x="925" y="490" as="geometry" />
+        </mxCell>
+        <mxCell id="mongo" parent="1" style="shape=cylinder3;whiteSpace=wrap;html=1;boundedLbl=1;backgroundOutline=1;size=15;align=left;verticalAlign=top;spacingLeft=8;spacingTop=14;fillColor=#d5e8d4;strokeColor=#82b366;" value="&lt;b&gt;MongoDB&lt;/b&gt;&lt;br&gt;live_bookings: bookings &amp;amp; revenue per minute" vertex="1">
+          <mxGeometry height="125" width="180" x="1730" y="175" as="geometry" />
+        </mxCell>
+        <mxCell id="dashboard" parent="1" style="whiteSpace=wrap;html=1;align=left;verticalAlign=top;spacingLeft=8;spacingTop=6;" value="&lt;b&gt;Dashboard&lt;/b&gt;&lt;br&gt;Overview tab, every 5s" vertex="1">
+          <mxGeometry height="110" width="260" x="1690" y="520" as="geometry" />
+        </mxCell>
+        <mxCell id="e-bp-kafka" edge="1" parent="1" source="booking-producer" style="edgeStyle=orthogonalEdgeStyle;html=1;" target="kafka">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e-fp-kafka" edge="1" parent="1" source="flight-producer" style="edgeStyle=orthogonalEdgeStyle;html=1;" target="kafka">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e-kafka-sb" edge="1" parent="1" source="kafka" style="edgeStyle=orthogonalEdgeStyle;html=1;" target="stream-bookings">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points">
+              <mxPoint x="830" y="185" />
+              <mxPoint x="830" y="185" />
+            </Array>
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="e-kafka-sf" edge="1" parent="1" source="kafka" style="edgeStyle=orthogonalEdgeStyle;html=1;" target="stream-flights">
+          <mxGeometry relative="1" x="-0.1095" as="geometry">
+            <Array as="points">
+              <mxPoint x="630" y="270" />
+              <mxPoint x="1395" y="270" />
+            </Array>
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="e-sb-lake" edge="1" parent="1" source="stream-bookings" style="edgeStyle=orthogonalEdgeStyle;html=1;" target="lakehouse">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e-sf-lake" edge="1" parent="1" source="stream-flights" style="edgeStyle=orthogonalEdgeStyle;html=1;" target="lakehouse">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e-sb-mongo" edge="1" parent="1" source="stream-bookings" style="edgeStyle=orthogonalEdgeStyle;html=1;" target="mongo">
+          <mxGeometry relative="1" x="0.0127" as="geometry">
+            <Array as="points">
+              <mxPoint x="1120" y="260" />
+            </Array>
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="e-mongo-dash" edge="1" parent="1" source="mongo" style="edgeStyle=orthogonalEdgeStyle;html=1;" target="dashboard">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+      </root>
+    </mxGraphModel>
+  </diagram>
+</mxfile>

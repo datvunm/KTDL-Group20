@@ -5,15 +5,19 @@ set -e
 root="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 network="ktdl-network"
 
+# Core pipeline only - admin UIs (adminer, mongo-express, dbt-docs) and the
+# streaming layer (kafka, spark-stream) are heavy and only needed when
+# you're actually using them. Bring them up with:
+#   ./start-admin-uis.sh
+#   ./start-streaming.sh
+# "file|services" - empty services means every service in that file.
 stacks=(
-  "postgres/docker-compose.dev.yaml"
-  "mongo/docker-compose.dev.yaml"
-  # "kafka/docker-compose.dev.yaml" # kafka disabled: streaming path out of scope
-  "hadoop/docker-compose.dev.yaml"
-  "spark/docker-compose.dev.yaml"
-  "airflow/docker-compose.dev.yaml"
-  "service-main/docker-compose.dev.yaml"
-  "dbt/docker-compose.dev.yaml"
+  "postgres/docker-compose.dev.yaml|db"
+  "mongo/docker-compose.dev.yaml|mongo"
+  "hadoop/docker-compose.dev.yaml|"
+  "spark/docker-compose.dev.yaml|spark spark-worker"
+  "airflow/docker-compose.dev.yaml|"
+  "service-main/docker-compose.dev.yaml|"
 )
 
 # host:port targets to validate once everything is up
@@ -28,15 +32,16 @@ targets=(
   "spark-worker:8081"
   "airflow:8080"
   "app:8000"
-  "dbt-docs:80"
 )
 
 echo "--- Ensuring shared network '$network' exists"
 docker network inspect "$network" >/dev/null 2>&1 || docker network create "$network"
 
-for stack in "${stacks[@]}"; do
-  echo "--- docker compose -f $stack up -d --build"
-  docker compose -f "$root/$stack" up -d --build
+for entry in "${stacks[@]}"; do
+  stack="${entry%%|*}"
+  services="${entry#*|}"
+  echo "--- docker compose -f $stack up -d --build $services"
+  docker compose -f "$root/$stack" up -d --build $services
 done
 
 echo "--- Waiting for services to settle..."
@@ -56,3 +61,8 @@ for t in "${targets[@]}"; do
     echo "[FAIL] $t"
   fi
 done
+
+echo
+echo "--- Optional extras (not started by this script):"
+echo "  ./start-admin-uis.sh   -> adminer, mongo-express, dbt-docs"
+echo "  ./start-streaming.sh   -> kafka, the booking/flight Structured Streaming app"

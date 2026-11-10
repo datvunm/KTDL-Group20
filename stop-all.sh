@@ -9,9 +9,9 @@ stacks=(
   "dbt/docker-compose.dev.yaml"
   "service-main/docker-compose.dev.yaml"
   "airflow/docker-compose.dev.yaml"
+  "kafka/docker-compose.dev.yaml"
   "spark/docker-compose.dev.yaml"
   "hadoop/docker-compose.dev.yaml"
-  # "kafka/docker-compose.dev.yaml" # kafka disabled: streaming path out of scope
   "mongo/docker-compose.dev.yaml"
   "postgres/docker-compose.dev.yaml"
 )
